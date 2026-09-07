@@ -33,7 +33,27 @@ Do not edit `state.rs`, `errors.rs`, `lib.rs`, or the `crates/lmsr` source.
 5. Transfer `usdc_amount` from buyer's token account → vault (CPI to the token
    program).
 6. Credit `UserPosition`, update `q_yes`/`q_no`, and check the new `q` against
-   `MAX_Q` → `QOutOfRange`.
+   `MAX_Q` → `QOutOfRange`. **The LMSR crate deliberately does not clamp to
+   `MAX_Q`** — `shares_for_cost` returns the mathematical answer and enforcing
+   the cap is your job. T01 found 55 vector cases that legitimately exceed it,
+   so this is a reachable path, not a theoretical one.
+
+6a. **Decide the zero-cost-trade question and document it.** T01 established
+   that at extreme skew (`(q_min − q_max)/b < −138`) the exact cost of a trade
+   is below 1e-60, so `buy_cost` correctly rounds to **0** — a user can acquire
+   shares of the near-certain-loser outcome for no collateral. The reference
+   oracle deliberately does not floor this, and T01's 1,800-step solvency test
+   shows the vault stays solvent because payout is bounded by
+   `max(q_yes, q_no)`, which such trades do not raise.
+
+   It is nonetheless a **free option**: zero cost, non-zero payoff if the
+   long-shot resolves that way. Reaching that skew requires someone to have
+   already paid in proportionally, so it is not a cheap attack — but decide it
+   consciously rather than by omission. Options: (a) accept it and match the
+   oracle exactly; (b) reject trades computing to zero collateral with a
+   dedicated error. **(b) is the safer default for a money-handling program.**
+   If you choose (b), say so loudly — it is a deliberate divergence from the
+   oracle and T09's parity test must be told to expect it.
 7. **Ordering:** compute and validate everything, including slippage, *before*
    any token transfer or state mutation. No partial state on the failure path.
 

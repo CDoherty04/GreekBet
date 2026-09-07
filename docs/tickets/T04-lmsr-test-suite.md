@@ -15,9 +15,22 @@ finds is worth much less.
 
 ## Tasks
 
+**T01 is done.** `reference/vectors/` holds 3,988 cases across four files
+(`grid` 2,496 · `edge` 898 · `trades` 48 sequences / 503 steps · `invariants`
+546). Schema is `greekbet.lmsr.vectors.v1`, documented in `reference/README.md`.
+Read that README before writing the loader — in particular, fields ending
+`_exact` are 36-significant-digit decimal strings, **not** integers, and
+`exceeds_max_q` / `holds` are real JSON booleans while everything else numeric
+is a string.
+
 1. **Golden-vector conformance** (`tests/conformance.rs`) — load
    `reference/vectors/*.json`, run every case through the Rust API, compare to
-   the Python reference. Values are JSON strings; parse to `u64`.
+   the Python reference. Numeric values are JSON strings; parse to `u64`.
+   - The oracle is high-precision (mpmath, 60 digits) and its integers are
+     stable — T01 confirmed identical output at 120 digits. So any mismatch is
+     the **Rust** side's error, not oracle noise. Treat it that way.
+   - `shares_for_cost` cases carry `exceeds_max_q`; the LMSR crate returns
+     unclamped values, so do not expect clamping here (T07 enforces the cap).
    - Assert a **stated absolute error bound in base units** — this is money, so
      express the tolerance as "≤ N base units", not as a relative float epsilon.
      Aim for exact equality on prices and ≤ 1 base unit on costs; if you cannot
