@@ -16,6 +16,33 @@ You own the tests. If you find a bug in the program, **report it — do not fix
 it.** Note that Node and yarn must be the **WSL-side** installs (T00), not the
 Windows ones.
 
+## Build environment — read `docs/TOOLCHAIN.md` before running anything
+
+T00 established these; each one will otherwise cost you an hour of confusing
+failures:
+
+- **The build/test sequence is `anchor build --arch v0` then
+  `anchor test --skip-build --validator legacy`.** Anchor 1.2.0 defaults to
+  sbpf v3, which Agave 3.1.10 refuses to load (`Unsupported program id` /
+  `Program is not deployed` at the validator). `anchor test` accepts no `--arch`
+  of its own, and `anchor test -- --arch v0` errors with "provided more than
+  once", so the two-step form is the only one that works.
+- **`--validator legacy` is required.** Anchor 1.2 defaults to `surfpool`, which
+  is not installed — without the flag `anchor test` fails instantly. Do not
+  install surfpool; this ticket wants `solana-test-validator`.
+- **Trap T00 hit directly:** a stale v0 `.so` in `deploy/` makes a broken v3
+  build look like it passed. If results seem impossibly good, wipe `deploy/`
+  and rebuild.
+- **`./target` is a symlink** to `$CARGO_TARGET_DIR` (`~/.cache/greekbet-target`),
+  because Anchor honors that variable and writes nothing into the workspace.
+  `ts-mocha` is transpile-only so tests pass regardless, but `tsc` and editors
+  need the symlink to resolve `../target/types/greekbet`. Recreate it with
+  `ln -sfn "$CARGO_TARGET_DIR" <workspace>/target` if it goes missing.
+- **Node and yarn must be the WSL installs** (`~/.nvm/…/v24.20.0`, yarn 1.22.22).
+  Windows `npm` leaks into WSL via interop with no matching `node`;
+  `~/.greekbet-env.sh` prepends nvm's bin so the Linux one wins. Source it.
+- Cold `anchor build` ~10 min, warm 4–22 s. Do not abandon on a timeout.
+
 ## Tasks
 
 1. Set up the TS test harness (`@coral-xyz/anchor`, `@solana/spl-token`, mocha,
@@ -66,7 +93,9 @@ Windows ones.
 
 ## Definition of done
 
-- `anchor test` passes end to end from a clean state.
+- `anchor build --arch v0` then `anchor test --skip-build --validator legacy`
+  passes end to end from a clean state (`deploy/` wiped, so no stale artifact
+  can mask a failure).
 - Full lifecycle covered in order.
 - Every negative test asserts a specific error code.
 - Parity against `reference/vectors/trades.json` is exact.

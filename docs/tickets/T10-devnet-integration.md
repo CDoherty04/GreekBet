@@ -21,10 +21,20 @@ mainnet.
 1. `scripts/devnet/setup.sh` — `solana config set --url devnet`, ensure a
    deploy keypair exists, request a SOL airdrop with retry (the devnet faucet is
    rate-limited and flaky; back off rather than hammering it), report the balance.
-2. `scripts/devnet/deploy.sh` — `anchor build && anchor deploy --provider.cluster
-   devnet`. Keep upgrade authority as the local keypair (plan §3 — fast
-   iteration, no lockdown yet). Record the deployed program ID and sync it into
-   `Anchor.toml` and `declare_id!`.
+2. `scripts/devnet/deploy.sh` — **`anchor build --arch v0`** then
+   `anchor deploy --provider.cluster devnet`. Keep upgrade authority as the local
+   keypair (plan §3 — fast iteration, no lockdown yet). Record the deployed
+   program ID and sync it into `Anchor.toml` and `declare_id!`.
+   - **`--arch v0` is not optional.** T00 verified that Anchor 1.2.0's default
+     sbpf v3 output is rejected outright — `solana program deploy` fails with
+     `invalid file header`. Devnet runs the same Agave line, so a v3 artifact
+     will not deploy there either.
+   - Wipe `deploy/` first. A stale v0 `.so` can make a broken build look fine.
+   - The local dev keypair from T00 is
+     `ANX8ikrsGHQqW9wWXbYWZ4eQVL23mKrjmJGsMm1NS5R4` at
+     `~/.config/solana/id.json`. T00 left `solana config` pointing at
+     **localhost** — your setup script must switch it to devnet, and should
+     switch it back or leave a note, since T09's local tests depend on it.
    - **Report the program ID prominently.** The user needs it.
 3. **Funding test wallets with USDC — plan §3 wants this unattended.** Circle's
    devnet USDC faucet cannot be minted by us, so try, in order:
