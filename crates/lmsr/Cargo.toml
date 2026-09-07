@@ -1,0 +1,20 @@
+[package]
+name = "lmsr"
+version = "0.1.0"
+edition = "2021"
+description = "Fixed-point (Q64.64) LMSR market-maker core. No Solana/Anchor dependencies."
+license = "MIT"
+publish = false
+
+[lib]
+name = "lmsr"
+path = "src/lib.rs"
+
+# Deliberately dependency-free: the crate must build for the Solana SBF target
+# and stay unit-testable with a plain `cargo test`. See docs/tickets/T02.
+[dependencies]
+
+[dev-dependencies]
+
+[profile.release]
+overflow-checks = true
