@@ -16,8 +16,19 @@ colliding.
 1. `anchor init` the workspace in place (program name `greekbet`), then wire the
    existing `crates/lmsr` in as a **workspace member** and a path dependency of
    the program. Both must build under one root `Cargo.toml`.
-   - `crates/lmsr` may not exist or may be mid-flight when you start — depend on
-     it by path regardless and note it if it does not compile yet.
+   - **`crates/lmsr` exists and builds today, but there is no root workspace
+     manifest yet** — so `cargo test -p lmsr` from the repo root currently fails
+     with "could not find Cargo.toml"; it only works from inside `crates/lmsr/`.
+     Creating that root manifest with `members = ["crates/*", "programs/*"]` is
+     **your job** and is the fix. Verify `cargo test -p lmsr` passes from the
+     root once you have added it.
+   - The `Cargo.lock` belongs at the workspace root. Do not leave one inside
+     `crates/lmsr/`.
+   - `crates/lmsr` is `#![no_std]` with zero dependencies and
+     `overflow-checks = true` under `[profile.release]`. Preserve that when
+     folding it into the workspace — a root `[profile.release]` will override
+     the crate's, so re-declare `overflow-checks = true` at the root. Losing it
+     would turn a caught overflow into a silent wrap in deployed code.
 2. `constants.rs` — PDA seed byte strings as named constants
    (`MARKET_SEED`, `VAULT_SEED`, `POSITION_SEED`). Never inline seed literals.
 3. `state.rs` — accounts exactly per plan §2.1:

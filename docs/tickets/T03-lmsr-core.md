@@ -24,6 +24,28 @@ max-loss invariant verified.
    - `MAX_Q = 1_000_000_000_000_000`
    - `DECIMALS = 6`, `UNIT = 1_000_000`
    - `validate_b(b: u64) -> Result<()>` and `validate_q(q: u64) -> Result<()>`.
+**T02 is done.** `crates/lmsr/src/fixed.rs` exists and is tested (24/24 pass,
+clippy clean, zero dependencies, no panics outside tests). Read its module
+header before starting — it documents the accuracy bounds you inherit. You own
+`lib.rs` and must **replace T02's placeholder** (currently just `#![no_std]`,
+`#[cfg(test)] extern crate std;`, `pub mod fixed;`) with the real public API.
+Do not edit `fixed.rs`.
+
+Key facts about the API you are building on:
+- `Fixed(i128)`, `FRAC_BITS = 64`. Constants `ZERO ONE NEG_ONE LN_2 E SQRT_2
+  MIN MAX EPSILON`.
+- `checked_add/sub/mul/div`, plus **`checked_mul_nearest`** (round-to-nearest —
+  use this in series, not the truncating `checked_mul`), `checked_neg/abs`.
+- `exp()`, `expm1()`, `ln()` all return `Result<Fixed, FixedError>`.
+  **Use `expm1` for `1 − e^(−X/b)`**, as T01's reference does — the naive form
+  loses the answer at the `B_MAX` / 1-base-unit corner.
+- **`from_base_units(n)` yields `n` itself, not `n/1e6`.** The whole pipeline
+  works in base units, matching `reference/lmsr_ref.py`. Exact for every legal
+  `q`, `b`, and collateral.
+- Accuracy you inherit: `exp`/`expm1` ≤ 3 ulp absolute, `ln` ≤ 20 ulp absolute.
+- `FixedError` is `{Overflow, DivByZero, Domain}` and maps 1:1 onto
+  `LmsrError::{Overflow, DivByZero, InvalidInput}` — write that `From`.
+
 2. `error.rs` — a `LmsrError` enum: `BOutOfRange`, `QOutOfRange`,
    `InsufficientShares`, `Overflow`, `DivByZero`, `InvalidInput`. Must be
    convertible to an Anchor error code later without the crate depending on
@@ -83,6 +105,26 @@ max-loss invariant verified.
    domain corners and would otherwise overflow. The log argument lands in
    `(0, 2]` and every exponent is ≤ 0. Use `−expm1(−X/b)` for `1 − e^(−X/b)`.
    T01 verified this against 300 independent bisections with identical results.
+
+5b-i. **The relative-error cliff — T02 found this and it is your problem to
+   solve, not `fixed.rs`'s.** `b·ln(z)` carries absolute error
+   `≈ b · abs_err(z)/z`. That is harmless for the log-sum-exp case where
+   `S ∈ [1, 2]` (under 1e-7 base units even at `B_MAX`), but it degrades badly
+   for `z ≪ 1`. In the `shares_for_cost` formula above, at deep skew `u_out`
+   becomes a near-denormal `Fixed` with terrible relative precision, *and* the
+   `(m − q_out)` term cancels against `b·ln(u_out)`.
+
+   Factor the tiny term out analytically instead of feeding it to `ln`. Since
+   `b·ln(u_out) = q_out − m` **exactly**:
+
+   ```
+   b·ln(u_out + u_other·w) = (q_out − m) + b·ln(1 + (u_other/u_out)·w)
+   ```
+
+   with `u_other/u_out = exp((q_other − q_out)/b)` computed directly as a single
+   `exp` rather than as a quotient of two tiny numbers. This is inherent to
+   Q64.64 and cannot be fixed in `fixed.rs`. Apply the same reasoning anywhere
+   else you would otherwise take `ln` of a near-zero value.
 
 5c. **Do not clamp `shares_for_cost` to `MAX_Q`.** Return the mathematical
    answer; enforcing the cap is the program's job (T07). T01's vectors flag
