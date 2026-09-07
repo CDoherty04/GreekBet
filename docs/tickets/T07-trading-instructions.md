@@ -1,0 +1,79 @@
+# T07 — `buy_shares` and `sell_shares`
+
+**Depends on:** T04, T06 · **Blocks:** T09
+**Owns:** `programs/greekbet/src/instructions/buy_shares.rs`, `sell_shares.rs`
+
+## Context
+
+Plan §2.2 — *"core path to test extensively"* — and §2.3, which makes on-chain
+slippage enforcement a security requirement, not a client convenience. This is
+the ticket where a bug costs money.
+
+Depends on T04 because the LMSR crate must be **proven** before the program
+trusts it. Read T03's and T04's reports before starting: the exact API
+signatures and rounding policy come from there.
+
+Do not edit `state.rs`, `errors.rs`, `lib.rs`, or the `crates/lmsr` source.
+
+## Tasks
+
+### `buy_shares(market, outcome, usdc_amount, max_slippage)`
+
+1. Require `status == Open` → `MarketNotOpen`, and
+   `Clock::get()?.unix_timestamp < close_time` (a market past its close time is
+   not tradeable even if nobody has cranked `close_market` yet — enforce it here).
+2. Init-if-needed the `UserPosition` PDA for `(market, buyer)`.
+3. Compute `shares = lmsr::shares_for_cost(q_yes, q_no, b, outcome, usdc_amount)`.
+4. **Slippage.** `max_slippage` needs a defined meaning — pick one, document it
+   in the handler doc comment, and be consistent with `sell_shares`. Recommended:
+   a `min_shares_out` semantic (the user states the fewest shares they will
+   accept), which is unambiguous and does not require the client to reason about
+   average vs marginal price. If you keep a price-based reading instead, define
+   precisely which price and in what units. Violation → `SlippageExceeded`.
+5. Transfer `usdc_amount` from buyer's token account → vault (CPI to the token
+   program).
+6. Credit `UserPosition`, update `q_yes`/`q_no`, and check the new `q` against
+   `MAX_Q` → `QOutOfRange`.
+7. **Ordering:** compute and validate everything, including slippage, *before*
+   any token transfer or state mutation. No partial state on the failure path.
+
+### `sell_shares(market, outcome, share_amount, min_usdc_out)`
+
+1. Same status and time checks.
+2. Require the position holds `>= share_amount` of that outcome →
+   `InsufficientShares`.
+3. Compute `proceeds = lmsr::sell_return(q_yes, q_no, b, outcome, share_amount)`.
+4. Require `proceeds >= min_usdc_out` → `SlippageExceeded`.
+5. Debit the position, decrement `q`, then transfer `proceeds` vault → seller,
+   signed by the market PDA (`CpiContext::new_with_signer`, seeds from
+   `constants.rs` plus the stored `vault_bump`).
+6. **Vault solvency check:** the vault must hold `proceeds`. It should by
+   construction, but assert it and fail cleanly rather than letting the token
+   program throw an opaque error.
+
+## Non-negotiables
+
+- **Rounding must never favor the user.** Cost rounds up, proceeds round down.
+  This is the vault-drain vector T04 property-tests; the program must not undo it.
+- **Slippage is enforced on-chain** (plan §2.3), never delegated to the client.
+- Checked arithmetic on every `q` and balance update → `MathOverflow`.
+- Validate every token account against `market.collateral_mint` and
+  `market.vault`.
+- Emit `SharesBought` / `SharesSold` events with the pre/post state and price.
+- The on-chain result must match the LMSR crate **exactly** — plan §4.2 requires
+  the test suite to assert that, so do not introduce any rounding or scaling of
+  your own on top of the crate's output.
+
+## Definition of done
+
+- `anchor build` succeeds, no `todo!()` in your files.
+- Both handlers complete with all checks above.
+- Slippage semantics documented in a doc comment on each handler.
+- Compute usage is within budget for the largest legal trade (T04 measured the
+  math cost; sanity-check the full instruction).
+
+## Report back
+
+The slippage semantics you chose and why, the exact LMSR calls made, the
+CPI-signing seed layout, and any place the LMSR API did not fit the instruction
+cleanly.
