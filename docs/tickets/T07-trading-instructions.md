@@ -65,11 +65,50 @@ Do not edit `state.rs`, `errors.rs`, `lib.rs`, or the `crates/lmsr` source.
 3. Compute `proceeds = lmsr::sell_return(q_yes, q_no, b, outcome, share_amount)`.
 4. Require `proceeds >= min_usdc_out` → `SlippageExceeded`.
 5. Debit the position, decrement `q`, then transfer `proceeds` vault → seller,
-   signed by the market PDA (`CpiContext::new_with_signer`, seeds from
-   `constants.rs` plus the stored `vault_bump`).
+   signed by the **market** PDA (`CpiContext::new_with_signer`).
+
+   **CORRECTION — the seeds this ticket originally specified were wrong, and
+   T08 hit it.** The vault's *authority* is the market PDA, so the signer seeds
+   are the **market's** seeds:
+
+   ```rust
+   let market_bump = [market.bump];
+   let seeds: &[&[u8]] = &[
+       MARKET_SEED,
+       market.creator.as_ref(),
+       market.question_hash.as_ref(),
+       &market_bump,
+   ];
+   ```
+
+   **`vault_bump` signs nothing** — it is the bump of the vault PDA's own
+   derivation. Using it derives the wrong key. Pin the vault with an
+   `address = market.vault @ GreekBetError::InvalidVault` constraint instead,
+   which is what `redeem.rs` does; copy that file's approach.
 6. **Vault solvency check:** the vault must hold `proceeds`. It should by
    construction, but assert it and fail cleanly rather than letting the token
    program throw an opaque error.
+
+## Anchor 1.2.0 gotchas already paid for by other tickets
+
+- **`CpiContext::new` / `new_with_signer` take the program `Pubkey`, not an
+  `AccountInfo`.** `ctx.accounts.token_program.to_account_info()` is a compile
+  error (`expected Pubkey, found AccountInfo`); use `.key()`. Most Anchor
+  examples predate this change.
+- **Handlers are named `<instruction>_handler`**, not `handler` —
+  `instructions/mod.rs` must glob re-export (Anchor's `#[program]` needs the
+  generated `__client_accounts_*` modules), so six modules exporting `handler`
+  would be ambiguous. `lib.rs` already calls `buy_shares_handler` and
+  `sell_shares_handler`; keep those signatures.
+- **Convert LMSR errors with `.or_program_err()`** (the `LmsrResultExt` trait in
+  `errors.rs`). A blanket `From<lmsr::LmsrError> for anchor_lang::Error` is
+  impossible — orphan rule, both types foreign.
+- **Define your events in your own instruction files.** There is no `events.rs`;
+  `redeem.rs` defines `Redeemed` locally and T06 does the same. This keeps
+  parallel tickets from colliding.
+- **Read `programs/greekbet/src/instructions/redeem.rs` before you start.** It is
+  finished, reviewed, and shows the house style for account constraints, PDA
+  signing, solvency checks, and event payloads.
 
 ## Non-negotiables
 

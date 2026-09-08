@@ -5,26 +5,38 @@ package_manager = "yarn"
 resolution = true
 skip-lint = false
 
-[programs.localnet]
-greekbet = "CUJMWWbfrCncxWZA1UvcZkTXLqysJEgLj28aVpyJF3J5"
-
+# Both clusters point at the same program id, matching the keypair at
+# $CARGO_TARGET_DIR/deploy/greekbet-keypair.json and `declare_id!` in
+# programs/greekbet/src/lib.rs. `anchor keys sync` only rewrites the entry for
+# the *configured* cluster, so after running it, check the other one by hand —
+# it silently left devnet stale once already.
+#
+# WARNING (T10): that keypair lives in the shared CARGO_TARGET_DIR
+# (~/.cache/greekbet-target), NOT in the repo, and it is gitignored. If that
+# cache is wiped the keypair is gone and a rebuild mints a new program id,
+# orphaning anything already deployed to devnet. Back it up before deploying.
 [programs.devnet]
-greekbet = "CUJMWWbfrCncxWZA1UvcZkTXLqysJEgLj28aVpyJF3J5"
+greekbet = "GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ"
+
+[programs.localnet]
+greekbet = "GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ"
 
 [provider]
 cluster = "localnet"
 wallet = "~/.config/solana/id.json"
 
-# NOTE (T00/T05): builds MUST be `anchor build --arch v0`. Anchor 1.2.0 defaults
-# to sbpf v3, which Agave 3.1.10 cannot load. There is no Anchor.toml key for
-# the arch, so it has to be passed on the command line, and `anchor test` must
-# then be given `--skip-build` (it has no `--arch` flag of its own):
+# BUILD/TEST SEQUENCE — `anchor build --arch v0` is mandatory. Anchor 1.2.0
+# defaults to sbpf v3, which Agave 3.1.10 cannot load ("invalid file header" on
+# deploy, "Unsupported program id" at the validator). `anchor test` has no
+# --arch flag of its own, so:
 #
 #   anchor build --arch v0
 #   anchor test --validator legacy --skip-build
 #
 # `--validator legacy` selects solana-test-validator; Anchor 1.2's default,
-# surfpool, is not installed. See docs/TOOLCHAIN.md §5.
+# surfpool, is not installed. A stale v0 .so in deploy/ makes a broken v3 build
+# look like it passed — wipe deploy/ if results surprise you.
+# See docs/TOOLCHAIN.md §5.
 [scripts]
 test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
 

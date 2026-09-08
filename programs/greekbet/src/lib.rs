@@ -49,7 +49,7 @@ pub use errors::GreekBetError;
 pub use instructions::*;
 pub use state::{Market, MarketStatus, Outcome, UserPosition};
 
-declare_id!("CUJMWWbfrCncxWZA1UvcZkTXLqysJEgLj28aVpyJF3J5");
+declare_id!("GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ");
 
 #[program]
 pub mod greekbet {
