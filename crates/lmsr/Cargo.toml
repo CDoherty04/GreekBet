@@ -16,5 +16,9 @@ path = "src/lib.rs"
 
 [dev-dependencies]
 
-[profile.release]
-overflow-checks = true
+# NOTE: `overflow-checks = true` now lives in the workspace root `Cargo.toml`.
+# Cargo ignores `[profile.*]` declared by a non-root package and warns about it,
+# so keeping a copy here would be misleading — it would look like protection
+# that is not actually applied. The root re-declares it deliberately; removing
+# it there would turn an overflow this crate is written to *catch* into a silent
+# wrap in deployed code.

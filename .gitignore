@@ -1,0 +1,34 @@
+# Build output. `/target` is a SYMLINK to $CARGO_TARGET_DIR
+# (~/.cache/greekbet-target on ext4), not a real directory: the repo lives on
+# the /mnt/c 9p mount where cargo builds are painfully slow. Anchor 1.2 honors
+# CARGO_TARGET_DIR and writes nothing into the workspace, but generated TS tests
+# import `../target/types/greekbet`, so the symlink has to exist.
+# Recreate with: ln -sfn "$CARGO_TARGET_DIR" ./target
+/target
+
+# Anchor
+.anchor/
+test-ledger/
+**/*.so
+
+# Program keypairs and any wallet material. Never commit these.
+**/target/deploy/*-keypair.json
+*.pem
+id.json
+
+# Node
+node_modules/
+.yarn/
+yarn-error.log
+npm-debug.log*
+
+# Python (reference oracle)
+__pycache__/
+*.py[cod]
+.venv/
+
+# Editors / OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
