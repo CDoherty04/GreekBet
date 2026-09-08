@@ -33,9 +33,32 @@ is a string.
      unclamped values, so do not expect clamping here (T07 enforces the cap).
    - Assert a **stated absolute error bound in base units** — this is money, so
      express the tolerance as "≤ N base units", not as a relative float epsilon.
-     Aim for exact equality on prices and ≤ 1 base unit on costs; if you cannot
-     hit that, report the real number rather than loosening the assertion
-     quietly.
+
+   **T03 already measured this across all 3,988 vectors (5,938 comparisons) —
+   do not re-litigate it, verify it.** Its result:
+
+   | function | checks | disagreements |
+   |---|---:|---:|
+   | `cost` | 1,587 | 0 |
+   | `price_yes` | 1,587 | 36 |
+   | `buy_cost` | 1,249 | 4 |
+   | `sell_return` | 890 | 1 |
+   | `shares_for_cost` | 1,212 | 34 |
+
+   75 of 5,938 (1.26%), **every one exactly ±1 base unit, every one at skew
+   `|q_yes − q_no| / b > 59`** — where the price is beyond `1 − 1e-25`. Below
+   skew 48 agreement is exact on every committed vector, and `lmsr.rs` asserts
+   that threshold as `EXACT_SKEW_LIMIT`.
+
+   This is **inherent, not a bug in either implementation**: one Q64.64 ulp is
+   `2^-64 ≈ 5.4e-20`, while mpmath at 60 digits still carries the minority
+   weight `e^−skew`. Your suite should therefore assert **exact equality below
+   `EXACT_SKEW_LIMIT` and ≤ 1 base unit above it**, and fail loudly if either
+   the count or the skew threshold regresses. Each vector carries an unrounded
+   `*_exact` field for the tolerant comparison — T01 put it there for this.
+
+   If you find a disagreement that is **> 1 base unit**, or one **below skew
+   48**, that is a genuine finding — report it, do not widen the tolerance.
    - Run `trades.json` sequences step by step and check for cumulative drift
      across a long sequence, not just per-step error.
 2. **Property tests** (`tests/properties.rs`, `proptest`) over the full legal
@@ -62,6 +85,19 @@ is a string.
    - **Every case must return `Ok` or an `LmsrError`. A panic is a test failure.**
      Consider `cargo test -- --test-threads=1` plus a catch-unwind harness, or
      `cargo-fuzz` if T00's toolchain has it.
+3a. **Close the gap T03 opened in `fixed.rs`'s coverage — this is a real hole.**
+   T02 characterised `exp` only on `x ≤ 0` and its module header says T03 would
+   never need the positive branch. **That is now false.** T03's
+   `b_small_softplus` evaluates `exp(ln b + x)`, which reaches **`+7.6`** at
+   `b = B_MAX`, so the positive branch is on the hot trade path and is
+   **unmeasured** — the 128-point golden table does not cover `(0, 7.6]`.
+
+   By inspection it reuses `exp_neg_series` on `[0.5, 1]` plus an exact left
+   shift, so relative error *should* be ~2.2e-19, but nobody has verified that.
+   Extend the golden table to positive arguments with
+   `crates/lmsr/gen_golden.py` (T02 kept it for exactly this), measure the real
+   bound, and assert it. Report the number.
+
 4. **Compute-unit sanity** (`benches/` or a plain measurement, your call) —
    `docs/DESIGN_DECISIONS.md` assumes Q64.64 `i128` math fits Solana's compute
    budget. Verify it rather than assuming: count operations, or build for the
