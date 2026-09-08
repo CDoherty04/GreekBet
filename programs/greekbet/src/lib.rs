@@ -75,21 +75,35 @@ pub mod greekbet {
         )
     }
 
-    /// Buy `outcome` shares by depositing `usdc_amount` of collateral.
+    /// Buy `outcome` shares by depositing exactly `usdc_amount` of collateral.
     ///
-    /// Slippage is enforced **on-chain** (plan §2.3). **Owned by T07.**
+    /// Slippage is enforced **on-chain** (plan §2.3) as a floor on what the
+    /// caller receives: the trade reverts with `SlippageExceeded` unless it
+    /// credits at least `min_shares_out` share base units. `0` disables the
+    /// check but still cannot produce a zero-output trade — that is
+    /// `ZeroCostTrade`.
+    ///
+    /// The plan called this argument `max_slippage`. It is named for what it
+    /// actually is: a price-based limit would have to say *which* price
+    /// (marginal-before, marginal-after, or average-paid), and those differ by
+    /// exactly the trade impact being guarded against. A minimum-output limit
+    /// needs no such choice, no second LMSR call, and no rounding decision that
+    /// could favour the caller — the worst effective price is simply
+    /// `usdc_amount / min_shares_out`, computable client-side with no knowledge
+    /// of the curve.
     pub fn buy_shares(
         ctx: Context<BuyShares>,
         outcome: Outcome,
         usdc_amount: u64,
-        max_slippage: u64,
+        min_shares_out: u64,
     ) -> Result<()> {
-        instructions::buy_shares::buy_shares_handler(ctx, outcome, usdc_amount, max_slippage)
+        instructions::buy_shares::buy_shares_handler(ctx, outcome, usdc_amount, min_shares_out)
     }
 
     /// Sell `share_amount` of `outcome` back to the market.
     ///
-    /// Fails unless proceeds are at least `min_usdc_out`. **Owned by T07.**
+    /// Mirror of [`buy_shares`]: reverts with `SlippageExceeded` unless
+    /// proceeds are at least `min_usdc_out`. **Owned by T07.**
     pub fn sell_shares(
         ctx: Context<SellShares>,
         outcome: Outcome,

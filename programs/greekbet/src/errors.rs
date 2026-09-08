@@ -88,7 +88,7 @@ pub enum GreekBetError {
     /// loser could be acquired for nothing. T01's oracle does not floor this and
     /// the vault stays solvent either way, but it is a free option. T07 decides
     /// whether to reject it; see `docs/tickets/T07-trading-instructions.md` 6a.
-    #[msg("Trade computes to zero collateral")]
+    #[msg("Trade moves zero collateral or zero shares")]
     ZeroCostTrade,
 
     // ---- token accounts --------------------------------------------------
