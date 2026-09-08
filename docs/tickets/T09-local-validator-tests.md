@@ -63,6 +63,45 @@ failures:
    - `redeem` for A and C (winners, paid 1:1) and B (loser, paid zero).
    - **Assert vault solvency at every step**, and that the vault is fully drained
      (± dust from documented rounding) after all redemptions. Report any residual.
+3a. **Parity coverage is limited by the instruction surface — audited, and it is
+   not a tolerance problem.**
+
+   Only **7 of the 48 sequences** in `reference/vectors/trades.json` are
+   replayable on-chain. The program has **no share-denominated buy** — `lib.rs`
+   exposes only `buy_shares(outcome, usdc_amount, min_shares_out)` — so any step
+   with `op: "buy"`, which names an exact `shares` count, cannot be expressed as
+   an instruction. Step counts across the file: **262 `buy`, 123 `sell`, 118
+   `buy_with_collateral`**. Six further cases (`skewed_start`) are unreachable
+   because they begin at a non-zero `q`, and an on-chain market always starts at
+   `(0, 0)`.
+
+   Replayable (start at `q=(0,0)`, every step `buy_with_collateral` or `sell`):
+
+   | case | shape | `b` | steps |
+   |---|---|---|---|
+   | `trades-00004` | collateral_ladder | 1e7 | 8 |
+   | `trades-00007` | random_walk_1 | 1e7 | 13 — the only one mixing buys and sells |
+   | `trades-00012` | collateral_ladder | 1e8 | 8 |
+   | `trades-00020` | collateral_ladder | 1e9 | 8 |
+   | `trades-00028` | collateral_ladder | 1e10 | 8 |
+   | `trades-00036` | collateral_ladder | 1e11 | 8 |
+   | `trades-00044` | collateral_ladder | 1e12 | 8 |
+
+   These still cover all six `b` decades and both directions, so **keep the
+   parity assertion exact**. Skip the other 41 explicitly with a stated reason,
+   and assert the replayed count so coverage cannot silently shrink.
+
+   Observable per step: `q_yes_after`/`q_no_after` from the `Market` account;
+   `shares`, `collateral_in`, `collateral_out`, and `price_yes_after` from the
+   `SharesBought`/`SharesSold` events (`price_yes_after` is **not** stored on
+   `Market`); `net_collateral_after` as vault balance minus `cost_initial`.
+   **`cost_after` is not observable** — no instruction returns `C(q)`.
+
+   Note: T04's `compute_budget.rs` models a "buy_shares (share-denominated)"
+   shape. That instruction does not exist. Closing the remaining coverage would
+   be a feature request against the program, not a test fix — report it, do not
+   work around it.
+
 4. **LMSR parity** (`tests/parity.ts`) — plan §4.2 requires on-chain results
    *"match LMSR module output exactly."* Load `reference/vectors/trades.json`,
    replay sequences on-chain, and assert exact equality with the reference. This
