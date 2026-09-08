@@ -252,6 +252,30 @@ impl UserPosition {
     }
 }
 
+/// SHA-256 of the question's raw UTF-8 bytes — the third seed of the market
+/// PDA and the value stored in [`Market::question_hash`].
+///
+/// Kept here, beside the field it fills, so the seed derivation and the stored
+/// value cannot drift apart.
+///
+/// **The digest must be byte-identical to a client-side `sha256(question)`**,
+/// because that is what makes the market PDA derivable off-chain — Anchor's IDL
+/// cannot express a hashed seed, so clients derive it explicitly:
+///
+/// ```text
+/// findProgramAddressSync(
+///   [Buffer.from("market"), creator.toBuffer(), sha256(question)],
+///   programId,
+/// )
+/// ```
+///
+/// Raw bytes only: no Unicode normalisation, no length prefix, no lowercasing.
+/// On-chain this compiles to the `sol_sha256` syscall rather than running the
+/// compression rounds in BPF.
+pub fn hash_question(question: &str) -> [u8; 32] {
+    solana_sha256_hasher::hash(question.as_bytes()).to_bytes()
+}
+
 /// Enforce the question-length cap.
 ///
 /// Called by T06's `create_market` before the account is written. Kept here,

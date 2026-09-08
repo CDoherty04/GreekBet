@@ -271,146 +271,19 @@ pub fn create_market_handler(
 // SHA-256
 // ---------------------------------------------------------------------------
 
-/// SHA-256 of the question bytes — the third seed of the market PDA and the
-/// value stored in [`Market::question_hash`].
+/// SHA-256 of the question bytes — the third seed of the market PDA.
 ///
-/// # Why this is implemented here instead of using the platform hasher
+/// Re-exported from [`crate::state::hash_question`], which is where the
+/// implementation lives so the seed derivation sits next to the
+/// [`Market::question_hash`] field it fills.
 ///
-/// **This is a reported gap, not a preference.** `anchor-lang` 1.2.0 does not
-/// re-export a hasher. Its `anchor_lang::solana_program` module covers
-/// `account_info`, `clock`, `instruction`, `program`, `program_error`,
-/// `program_memory`, `program_option`, `program_pack`, `pubkey`, `rent`,
-/// `sysvar`, `log`, `system_program`, `system_instruction` and
-/// `bpf_loader_upgradeable` — and no `hash` or `keccak`. `anchor-spl` 1.2.0 has
-/// none either, and `const-crypto`'s `sha2` reaches this crate only as a
-/// private transitive dependency of `anchor-lang`.
-///
-/// The proper fix is one line in `programs/greekbet/Cargo.toml`
-/// (`solana-sha256-hasher`, already in `Cargo.lock` transitively) plus a
-/// `hash_question()` helper in `state.rs` next to the field it fills. Both
-/// files belong to T05, so this ticket cannot make that change; a pure-Rust
-/// SHA-256 kept inside T06's own file is the only in-scope option.
-///
-/// It is the standard FIPS 180-4 construction, pinned by the test vectors
-/// below, so the digest is byte-identical to any client-side `sha256(question)`
-/// and the PDA derivation is unaffected. Swapping in the syscall later changes
-/// nothing observable.
-///
-/// Cost is 4 compression rounds for a 200-byte question — negligible next to
-/// the LMSR fixed-point work in the same instruction.
-pub fn question_hash(question: &str) -> [u8; 32] {
-    sha256(question.as_bytes())
-}
-
-/// FIPS 180-4 round constants.
-///
-/// `rustfmt::skip` keeps the table as a readable grid; the default one-per-line
-/// formatting turns 64 constants into 64 lines for no benefit.
-#[rustfmt::skip]
-const SHA256_K: [u32; 64] = [
-    0x428a_2f98, 0x7137_4491, 0xb5c0_fbcf, 0xe9b5_dba5, 0x3956_c25b, 0x59f1_11f1, 0x923f_82a4,
-    0xab1c_5ed5, 0xd807_aa98, 0x1283_5b01, 0x2431_85be, 0x550c_7dc3, 0x72be_5d74, 0x80de_b1fe,
-    0x9bdc_06a7, 0xc19b_f174, 0xe49b_69c1, 0xefbe_4786, 0x0fc1_9dc6, 0x240c_a1cc, 0x2de9_2c6f,
-    0x4a74_84aa, 0x5cb0_a9dc, 0x76f9_88da, 0x983e_5152, 0xa831_c66d, 0xb003_27c8, 0xbf59_7fc7,
-    0xc6e0_0bf3, 0xd5a7_9147, 0x06ca_6351, 0x1429_2967, 0x27b7_0a85, 0x2e1b_2138, 0x4d2c_6dfc,
-    0x5338_0d13, 0x650a_7354, 0x766a_0abb, 0x81c2_c92e, 0x9272_2c85, 0xa2bf_e8a1, 0xa81a_664b,
-    0xc24b_8b70, 0xc76c_51a3, 0xd192_e819, 0xd699_0624, 0xf40e_3585, 0x106a_a070, 0x19a4_c116,
-    0x1e37_6c08, 0x2748_774c, 0x34b0_bcb5, 0x391c_0cb3, 0x4ed8_aa4a, 0x5b9c_ca4f, 0x682e_6ff3,
-    0x748f_82ee, 0x78a5_636f, 0x84c8_7814, 0x8cc7_0208, 0x90be_fffa, 0xa450_6ceb, 0xbef9_a3f7,
-    0xc671_78f2,
-];
-
-/// FIPS 180-4 initial hash value.
-#[rustfmt::skip]
-const SHA256_H0: [u32; 8] = [
-    0x6a09_e667, 0xbb67_ae85, 0x3c6e_f372, 0xa54f_f53a, 0x510e_527f, 0x9b05_688c, 0x1f83_d9ab,
-    0x5be0_cd19,
-];
-
-/// One SHA-256 compression over a single 64-byte block.
-///
-/// Every addition here is `wrapping_add` **by specification** — SHA-256 is
-/// defined over `Z/2^32`. This is the one place in the program where wrapping
-/// arithmetic is the correct behaviour; the workspace `release` profile sets
-/// `overflow-checks = true`, so a plain `+` would abort instead of hashing.
-fn sha256_compress(state: &mut [u32; 8], block: &[u8; 64]) {
-    let mut w = [0u32; 64];
-    // `zip` stops after the 16 chunks the block actually has, filling w[0..16].
-    for (word, chunk) in w.iter_mut().zip(block.as_chunks::<4>().0) {
-        *word = u32::from_be_bytes(*chunk);
-    }
-    for i in 16..64 {
-        let x = w[i - 15];
-        let y = w[i - 2];
-        let s0 = x.rotate_right(7) ^ x.rotate_right(18) ^ (x >> 3);
-        let s1 = y.rotate_right(17) ^ y.rotate_right(19) ^ (y >> 10);
-        w[i] = w[i - 16]
-            .wrapping_add(s0)
-            .wrapping_add(w[i - 7])
-            .wrapping_add(s1);
-    }
-
-    let [mut a, mut b, mut c, mut d, mut e, mut f, mut g, mut h] = *state;
-    for (k, wi) in SHA256_K.iter().zip(w.iter()) {
-        let s1 = e.rotate_right(6) ^ e.rotate_right(11) ^ e.rotate_right(25);
-        let ch = (e & f) ^ ((!e) & g);
-        let t1 = h
-            .wrapping_add(s1)
-            .wrapping_add(ch)
-            .wrapping_add(*k)
-            .wrapping_add(*wi);
-        let s0 = a.rotate_right(2) ^ a.rotate_right(13) ^ a.rotate_right(22);
-        let maj = (a & b) ^ (a & c) ^ (b & c);
-        let t2 = s0.wrapping_add(maj);
-
-        h = g;
-        g = f;
-        f = e;
-        e = d.wrapping_add(t1);
-        d = c;
-        c = b;
-        b = a;
-        a = t1.wrapping_add(t2);
-    }
-
-    for (s, v) in state.iter_mut().zip([a, b, c, d, e, f, g, h]) {
-        *s = s.wrapping_add(v);
-    }
-}
-
-/// SHA-256 over an arbitrary byte slice.
-fn sha256(data: &[u8]) -> [u8; 32] {
-    let mut state = SHA256_H0;
-
-    let (blocks, rem) = data.as_chunks::<64>();
-    for block in blocks {
-        sha256_compress(&mut state, block);
-    }
-
-    // Padding: 0x80, then zeros, then the 64-bit big-endian bit length. A
-    // remainder of 56..=63 bytes leaves no room for the length and needs a
-    // second block. `rem.len() <= 63`, so `block[rem.len()]` is always in
-    // bounds.
-    let mut block = [0u8; 64];
-    block[..rem.len()].copy_from_slice(rem);
-    block[rem.len()] = 0x80;
-    if rem.len() >= 56 {
-        sha256_compress(&mut state, &block);
-        block = [0u8; 64];
-    }
-    // `data.len()` is bounded by the transaction size, so this cannot actually
-    // wrap; `wrapping_mul` is used on the same principle as above rather than
-    // relying on that bound.
-    let bit_len = (data.len() as u64).wrapping_mul(8);
-    block[56..].copy_from_slice(&bit_len.to_be_bytes());
-    sha256_compress(&mut state, &block);
-
-    let mut out = [0u8; 32];
-    for (chunk, word) in out.as_chunks_mut::<4>().0.iter_mut().zip(state.iter()) {
-        *chunk = word.to_be_bytes();
-    }
-    out
-}
+/// T06 originally hand-rolled FIPS 180-4 here because `anchor-lang` 1.2.0
+/// re-exports no hasher and neither does `anchor-spl`. That is now replaced by
+/// the `solana-sha256-hasher` crate, which lowers to the `sol_sha256` syscall
+/// on-chain instead of running compression rounds in BPF. The digest is
+/// unchanged — the NIST vectors below still pin it — so the market PDA
+/// derivation is byte-for-byte the same.
+pub use crate::state::hash_question as question_hash;
 
 #[cfg(test)]
 mod tests {
@@ -424,53 +297,64 @@ mod tests {
         })
     }
 
-    /// FIPS 180-4 vectors. These pin the hand-rolled SHA-256 to the same digest
-    /// any client-side `sha256()` produces, which is what makes the market PDA
-    /// derivable off-chain. If this ever moves to the platform hasher, these
-    /// must keep passing unchanged.
+    /// FIPS 180-4 vectors, retained from T06's hand-rolled implementation and
+    /// now pointed at `solana-sha256-hasher`.
+    ///
+    /// **These are the regression guard for that swap.** They pin the digest to
+    /// what any client-side `sha256()` produces, which is what makes the market
+    /// PDA derivable off-chain — Anchor's IDL cannot express a hashed seed, so
+    /// clients must derive it themselves. If these still pass, the replacement
+    /// changed nothing observable about PDA derivation.
+    ///
+    /// The four inputs cover every padding path: empty, one block, the 56-byte
+    /// boundary where the length no longer fits the first padded block, and a
+    /// 112-byte message needing a whole extra padding block.
     #[test]
     fn sha256_matches_known_vectors() {
-        // Empty input: a single all-padding block.
         assert_eq!(
-            hex(&sha256(b"")),
+            hex(&question_hash("")),
             "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         );
-        // 3 bytes: the canonical one-block vector.
         assert_eq!(
-            hex(&sha256(b"abc")),
+            hex(&question_hash("abc")),
             "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
         );
-        // 56 bytes: exactly the boundary where the length no longer fits in the
-        // first padded block, so this exercises the two-block padding path.
         assert_eq!(
-            hex(&sha256(
-                b"abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
+            hex(&question_hash(
+                "abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq"
             )),
             "248d6a61d20638b8e5c026930c3e6039a33ce45964ff2167f6ecedd419db06c1"
         );
-        // 112 bytes: two full message blocks plus a whole extra padding block.
         assert_eq!(
-            hex(&sha256(
-                b"abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"
+            hex(&question_hash(
+                "abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu"
             )),
             "cf5b16a778af8380036ce59e7b0492370b249b11e8f07a51afac45037afee9d1"
         );
     }
 
     /// The market PDA seed must be the SHA-256 of the raw UTF-8 bytes and
-    /// nothing else — no normalisation, no length prefix.
+    /// nothing else — no normalisation, no length prefix, no lowercasing.
     #[test]
     fn question_hash_is_sha256_of_the_raw_bytes() {
-        assert_eq!(question_hash("abc"), sha256(b"abc"));
-        assert_eq!(question_hash(""), sha256(b""));
         // A realistic question, long enough to need two compression blocks.
+        // Digest independently produced by Python `hashlib.sha256`.
         let q = "Will ETH close above $4,000 on 2026-12-31 according to Coinbase?";
-        assert_eq!(question_hash(q), sha256(q.as_bytes()));
-        // The cap is a byte cap: a 200-char multibyte string is 400 bytes and
-        // hashes fine — it is `validate_question_len` that rejects it.
+        assert_eq!(
+            hex(&question_hash(q)),
+            "b1951eb560577570687059e1aa07ff8f8b56640c18cc0de14845dd3b7a29c79b"
+        );
+
+        // The cap is a BYTE cap: a 200-char multibyte string is 400 bytes. It
+        // hashes fine — it is `validate_question_len` that rejects it, and the
+        // two must not disagree about which strings are representable.
         let long = "é".repeat(200);
-        assert_eq!(question_hash(&long), sha256(long.as_bytes()));
+        assert_eq!(long.len(), 400);
         assert!(validate_question_len(&long).is_err());
+
+        // Distinct questions must not collide into the same market PDA.
+        assert_ne!(question_hash("a"), question_hash("b"));
+        assert_ne!(question_hash("abc"), question_hash("ABC"));
     }
 
     /// The seed deposit is a computed function of `b`, never a constant, and

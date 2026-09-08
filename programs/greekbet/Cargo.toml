@@ -27,6 +27,17 @@ custom-panic = []
 anchor-lang = { version = "1.2.0", features = ["init-if-needed"] }
 # SPL token CPI: the collateral vault, creator/trader token accounts, ATAs.
 anchor-spl = "1.2.0"
+# SHA-256 for the market PDA's question-hash seed.
+#
+# This is a direct dependency because anchor-lang 1.2.0 re-exports no hasher:
+# its `solana_program` module covers account_info, clock, instruction, program,
+# program_error, program_memory, program_option, program_pack, pubkey, rent,
+# sysvar, log, system_program, system_instruction and bpf_loader_upgradeable,
+# and no `hash` or `keccak`. anchor-spl has none either. T06 found this and
+# worked around it with a hand-rolled FIPS 180-4 implementation; this crate
+# replaces that, and uses the sol_sha256 syscall on-chain rather than computing
+# the compression rounds in BPF.
+solana-sha256-hasher = "3.1.0"
 # The LMSR core, wired in by path only. Never edit `crates/lmsr` from here —
 # it is owned by T02/T03/T04 and is frozen.
 lmsr = { path = "../../crates/lmsr" }
