@@ -24,6 +24,35 @@ Do not edit `state.rs`, `errors.rs`, `lib.rs`, or the `crates/lmsr` source.
    not tradeable even if nobody has cranked `close_market` yet — enforce it here).
 2. Init-if-needed the `UserPosition` PDA for `(market, buyer)`.
 3. Compute `shares = lmsr::shares_for_cost(q_yes, q_no, b, outcome, usdc_amount)`.
+
+   **DO NOT then charge `buy_cost(shares)` and assert it is `<= usdc_amount`.
+   That assertion fails on real inputs and would revert a legitimate trade.**
+
+   T04 measured this. `buy_cost(state, shares_for_cost(state, c)) <= c` is a
+   theorem in exact arithmetic, and both `lmsr.rs` and `reference/README.md`
+   state it unqualified — but the fixed-point implementation violates it by
+   exactly `+1` base unit on roughly **1 in 10,000** random `(state, budget)`
+   pairs, at every `b` decade, down to **skew 10.5**. Three verified
+   counterexamples are pinned in `crates/lmsr/tests/properties.rs`; e.g.
+   `q_yes = 48, q_no = 10_527_565_366_593, b = 999_863_744_567`, buy Yes with
+   `2_056_658` → exact `ΔC = 2056657.99999997722`, Rust returns `2_056_659`.
+
+   Root cause is inherent, not a bug: `b·ln(z)` carries absolute error
+   `≈ b · 2^-64 · k`, which is **`b`-scaled, not skew-scaled** (≈`2.7e-8` at
+   `b = B_MAX`). Whenever the exact `ΔC` lands that close *below* an integer,
+   `ceil` flips. It is `+1` in the protocol's favour, never the user's, so
+   solvency is unaffected.
+
+   **Charge exactly `usdc_amount`** — the collateral the user supplied — and
+   credit `shares`. That is what `reference/vectors/trades.json`'s
+   `buy_with_collateral` ledger does and it has no such failure mode. Use
+   `buy_cost` for the `share_amount`-denominated path only.
+
+3a. **`EXACT_SKEW_LIMIT` is not a guarantee about arbitrary inputs.** It
+   describes the fixed 3,988-vector corpus, where the lowest disagreeing skew is
+   59. The real error bound is `b`-scaled, so a ±1 disagreement can occur at any
+   skew — T04 found one at 10.5. Do not build logic that assumes exactness below
+   some skew.
 4. **Slippage.** `max_slippage` needs a defined meaning — pick one, document it
    in the handler doc comment, and be consistent with `sell_shares`. Recommended:
    a `min_shares_out` semantic (the user states the fewest shares they will

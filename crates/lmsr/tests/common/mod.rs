@@ -96,6 +96,13 @@ impl Json {
             .expect("usize field")
     }
 
+    /// A real JSON boolean field (`exceeds_max_q`, `holds`).
+    pub fn as_bool_at(&self, key: &str) -> bool {
+        self.get(key)
+            .unwrap_or_else(|| panic!("missing field {key:?}"))
+            .as_bool()
+    }
+
     pub fn str_at(&self, key: &str) -> &str {
         self.get(key)
             .unwrap_or_else(|| panic!("missing field {key:?}"))
@@ -477,6 +484,61 @@ pub fn skew(q_yes: u64, q_no: u64, b: u64) -> f64 {
     (q_yes.max(q_no) - q_yes.min(q_no)) as f64 / b as f64
 }
 
+/// Identifies one comparison: which case, which function, and the market state
+/// whose skew decides which half of the envelope applies.
+///
+/// A trade touches *two* states. [`Ctx::trade`] keeps the more skewed of the
+/// two, because that is the one whose minority weight has underflowed — the
+/// exact-agreement guarantee can only be demanded when **every** state involved
+/// is inside the exact range.
+pub struct Ctx<'a> {
+    pub id: &'a str,
+    pub what: &'a str,
+    pub q_yes: u64,
+    pub q_no: u64,
+    pub b: u64,
+}
+
+impl<'a> Ctx<'a> {
+    pub fn state(id: &'a str, what: &'a str, q_yes: u64, q_no: u64, b: u64) -> Self {
+        Ctx {
+            id,
+            what,
+            q_yes,
+            q_no,
+            b,
+        }
+    }
+
+    /// The more skewed of the two states a trade moves between.
+    #[allow(clippy::too_many_arguments)]
+    pub fn trade(
+        id: &'a str,
+        what: &'a str,
+        q_yes0: u64,
+        q_no0: u64,
+        q_yes1: u64,
+        q_no1: u64,
+        b: u64,
+    ) -> Self {
+        let d0 = q_yes0.max(q_no0) - q_yes0.min(q_no0);
+        let d1 = q_yes1.max(q_no1) - q_yes1.min(q_no1);
+        if d1 > d0 {
+            Ctx::state(id, what, q_yes1, q_no1, b)
+        } else {
+            Ctx::state(id, what, q_yes0, q_no0, b)
+        }
+    }
+
+    pub fn skew(&self) -> f64 {
+        skew(self.q_yes, self.q_no, self.b)
+    }
+
+    pub fn exact_required(&self) -> bool {
+        within_exact_range(self.q_yes, self.q_no, self.b)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Disagreement bookkeeping
 // ---------------------------------------------------------------------------
@@ -504,33 +566,57 @@ impl Stats {
 
     /// Record one comparison and enforce the T04 envelope:
     /// exact below [`EXACT_SKEW_LIMIT`], `<= 1` base unit above it.
-    pub fn check(&mut self, id: &str, what: &str, got: u64, want: u64, q_yes: u64, q_no: u64, b: u64) {
+    pub fn check(&mut self, ctx: &Ctx<'_>, got: u64, want: u64) {
         self.checks += 1;
         if got == want {
             return;
         }
+        let Ctx {
+            id,
+            what,
+            q_yes,
+            q_no,
+            b,
+        } = *ctx;
         let delta = i128::from(got) - i128::from(want);
         assert!(
-            !within_exact_range(q_yes, q_no, b),
+            !ctx.exact_required(),
             "REGRESSION {id}: {what} = {got}, oracle {want} (delta {delta}) at skew {:.4} \
              (q_yes={q_yes} q_no={q_no} b={b}) — inside the exact-agreement range (< {})",
-            skew(q_yes, q_no, b),
+            ctx.skew(),
             EXACT_SKEW_LIMIT
         );
         assert!(
             delta.abs() <= 1,
             "REGRESSION {id}: {what} = {got}, oracle {want} (delta {delta}) at skew {:.4} \
              (q_yes={q_yes} q_no={q_no} b={b}) — extreme skew may cost 1 base unit, never more",
-            skew(q_yes, q_no, b)
+            ctx.skew()
         );
         self.disagreements += 1;
-        let s = skew(q_yes, q_no, b);
+        let s = ctx.skew();
         if s < self.min_bad_skew {
             self.min_bad_skew = s;
             self.worst_id = id.to_string();
         }
         if delta.abs() > self.max_abs_delta {
             self.max_abs_delta = delta.abs();
+        }
+    }
+
+    /// Fold another `Stats` in (per-file into a grand total).
+    pub fn merge(&mut self, other: &Stats) {
+        self.checks += other.checks;
+        self.disagreements += other.disagreements;
+        if other.max_abs_delta > self.max_abs_delta {
+            self.max_abs_delta = other.max_abs_delta;
+        }
+        if other.min_bad_skew < self.min_bad_skew {
+            self.min_bad_skew = other.min_bad_skew;
+            self.worst_id = other.worst_id.clone();
+        }
+        if other.max_exact_err > self.max_exact_err {
+            self.max_exact_err = other.max_exact_err;
+            self.max_exact_err_id = other.max_exact_err_id.clone();
         }
     }
 
@@ -559,4 +645,73 @@ impl Stats {
             if self.max_exact_err_id.is_empty() { "-" } else { &self.max_exact_err_id }
         );
     }
+}
+
+// ---------------------------------------------------------------------------
+// Extrema tracking (reporting)
+// ---------------------------------------------------------------------------
+
+/// Remembers the largest value ever offered, with the input that produced it.
+#[derive(Debug, Default)]
+pub struct WorstMax {
+    pub value: i128,
+    pub label: String,
+    pub seen: bool,
+}
+
+impl WorstMax {
+    pub fn offer(&mut self, value: i128, label: impl FnOnce() -> String) {
+        if !self.seen || value > self.value {
+            self.value = value;
+            self.label = label();
+            self.seen = true;
+        }
+    }
+}
+
+/// Remembers the smallest value ever offered, with the input that produced it.
+#[derive(Debug, Default)]
+pub struct WorstMin {
+    pub value: i128,
+    pub label: String,
+    pub seen: bool,
+}
+
+impl WorstMin {
+    pub fn offer(&mut self, value: i128, label: impl FnOnce() -> String) {
+        if !self.seen || value < self.value {
+            self.value = value;
+            self.label = label();
+            self.seen = true;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Panic capture
+// ---------------------------------------------------------------------------
+
+/// Run `f`, converting a panic into `Err(message)`.
+///
+/// The boundary suite's contract is *"every input returns `Ok` or an
+/// `LmsrError`; a panic is a failure"*. `catch_unwind` is what turns "the test
+/// binary died somewhere inside a 400k-case loop" into "case
+/// (q_yes=…, b=…) panicked with …", which is the difference between a usable
+/// bug report and a stack trace.
+///
+/// The panic hook is deliberately **not** swapped out: `libtest` installs its
+/// own to capture per-test output, and replacing it would throw away the
+/// message of any genuine assertion failure in the surrounding test. A caught
+/// panic therefore also prints its own `thread … panicked at …` line, which is
+/// extra evidence, and only ever appears on a run that is already failing.
+pub fn catch<T>(f: impl FnOnce() -> T + std::panic::UnwindSafe) -> std::result::Result<T, String> {
+    std::panic::catch_unwind(f).map_err(|e| {
+        if let Some(s) = e.downcast_ref::<&str>() {
+            (*s).to_string()
+        } else if let Some(s) = e.downcast_ref::<String>() {
+            s.clone()
+        } else {
+            "<non-string panic payload>".to_string()
+        }
+    })
 }

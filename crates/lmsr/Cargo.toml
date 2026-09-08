@@ -14,7 +14,19 @@ path = "src/lib.rs"
 # and stay unit-testable with a plain `cargo test`. See docs/tickets/T02.
 [dependencies]
 
+# Test-only. `proptest` drives `tests/properties.rs`; it never reaches the
+# library, so the crate stays dependency-free for the SBF build. `std` only.
 [dev-dependencies]
+proptest = "1"
+
+# A plain `main`, not a `#[bench]`: the built-in bench harness is nightly-only
+# and this crate takes no dev-dependency on `criterion`. Prints native timings
+# next to the on-chain compute-unit figures measured by
+# `benches/solana_cu_probe/`. See T04.
+[[bench]]
+name = "compute_units"
+path = "benches/compute_units.rs"
+harness = false
 
 # NOTE: `overflow-checks = true` now lives in the workspace root `Cargo.toml`.
 # Cargo ignores `[profile.*]` declared by a non-root package and warns about it,
