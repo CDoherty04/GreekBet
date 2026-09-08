@@ -1,0 +1,33 @@
+# GreekBet — Cargo workspace root (ticket T05).
+#
+# Two members:
+#   * `crates/lmsr`       — the pure, `no_std`, dependency-free LMSR core (T02–T04).
+#   * `programs/greekbet` — the Anchor program that consumes it (T05–T08).
+#
+# Before this file existed, `cargo test -p lmsr` only worked from inside
+# `crates/lmsr/`. With it, cargo works from the repo root and there is exactly
+# one `Cargo.lock` — here, never inside `crates/lmsr/`.
+
+[workspace]
+members = ["crates/*", "programs/*"]
+resolver = "2"
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.89.0"
+
+# A `[profile.release]` at the workspace root OVERRIDES the one in
+# `crates/lmsr/Cargo.toml` — Cargo ignores profiles declared by non-root
+# packages and warns about it. `overflow-checks = true` is therefore
+# re-declared here deliberately: without it an arithmetic overflow the LMSR
+# crate is written to *catch* would silently wrap in deployed, money-handling
+# code. Do not remove it.
+[profile.release]
+overflow-checks = true
+lto = "fat"
+codegen-units = 1
+
+[profile.release.build-override]
+opt-level = 3
+incremental = false
+codegen-units = 1

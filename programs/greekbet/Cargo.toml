@@ -1,0 +1,35 @@
+[package]
+name = "greekbet"
+version = "0.1.0"
+description = "GreekBet — binary YES/NO prediction markets priced by an LMSR AMM"
+license = "MIT"
+edition.workspace = true
+rust-version.workspace = true
+publish = false
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "greekbet"
+
+[features]
+default = []
+cpi = ["no-entrypoint"]
+no-entrypoint = []
+no-log-ix-name = []
+idl-build = ["anchor-lang/idl-build", "anchor-spl/idl-build"]
+anchor-debug = []
+custom-heap = []
+custom-panic = []
+
+[dependencies]
+# `init-if-needed` is enabled up front because T07's `buy_shares` must
+# init-if-needed the `UserPosition` PDA and T07 does not own this manifest.
+anchor-lang = { version = "1.2.0", features = ["init-if-needed"] }
+# SPL token CPI: the collateral vault, creator/trader token accounts, ATAs.
+anchor-spl = "1.2.0"
+# The LMSR core, wired in by path only. Never edit `crates/lmsr` from here —
+# it is owned by T02/T03/T04 and is frozen.
+lmsr = { path = "../../crates/lmsr" }
+
+[lints.rust]
+unexpected_cfgs = { level = "warn", check-cfg = ['cfg(target_os, values("solana"))'] }

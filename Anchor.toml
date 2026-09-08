@@ -1,0 +1,31 @@
+[toolchain]
+package_manager = "yarn"
+
+[features]
+resolution = true
+skip-lint = false
+
+[programs.localnet]
+greekbet = "CUJMWWbfrCncxWZA1UvcZkTXLqysJEgLj28aVpyJF3J5"
+
+[programs.devnet]
+greekbet = "CUJMWWbfrCncxWZA1UvcZkTXLqysJEgLj28aVpyJF3J5"
+
+[provider]
+cluster = "localnet"
+wallet = "~/.config/solana/id.json"
+
+# NOTE (T00/T05): builds MUST be `anchor build --arch v0`. Anchor 1.2.0 defaults
+# to sbpf v3, which Agave 3.1.10 cannot load. There is no Anchor.toml key for
+# the arch, so it has to be passed on the command line, and `anchor test` must
+# then be given `--skip-build` (it has no `--arch` flag of its own):
+#
+#   anchor build --arch v0
+#   anchor test --validator legacy --skip-build
+#
+# `--validator legacy` selects solana-test-validator; Anchor 1.2's default,
+# surfpool, is not installed. See docs/TOOLCHAIN.md §5.
+[scripts]
+test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+
+[hooks]
