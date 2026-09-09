@@ -43,7 +43,8 @@ export default function NewGroupPage() {
           autoFocus
         />
         <p className="text-sm text-muted">
-          You&apos;ll get a shareable invite link after it&apos;s created.
+          You&apos;ll be the owner: you can resolve events, but you can&apos;t
+          bet on them.
         </p>
         {error && <p className="text-sm text-no">{error}</p>}
         <div className="mt-auto">

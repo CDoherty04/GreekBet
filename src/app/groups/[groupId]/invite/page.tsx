@@ -94,6 +94,7 @@ export default function GroupInvitePage() {
             <MemberAvatar user={m} />
             <p className="truncate font-display text-base font-bold uppercase tracking-wide">
               {m.name}
+              {m.id === group.ownerId ? " · owner" : ""}
               {m.id === user.id ? " · you" : ""}
             </p>
           </Card>

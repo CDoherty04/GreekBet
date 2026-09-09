@@ -89,11 +89,16 @@ export const api = {
   resolveMarket: (marketId: string, input: { imageDataUrl: string }) =>
     request<{
       market: MarketView;
-      outcome: Side;
-      description: string;
+      prediction: { outcome: Side; confidence: number; description: string };
       faceMatch: { match: boolean; confidence: number };
     }>(`/api/markets/${marketId}/resolve`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
+
+  confirmResolution: (marketId: string, outcome: Side) =>
+    request<{ market: MarketView; outcome: Side }>(
+      `/api/markets/${marketId}/resolve/confirm`,
+      { method: "POST", body: JSON.stringify({ outcome }) },
+    ),
 };

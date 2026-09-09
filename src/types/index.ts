@@ -66,6 +66,10 @@ export interface Market {
   resolutionImageUrl?: string;
   /** Sanitized, AI-generated description of the resolution photo. */
   resolutionNote?: string;
+  /** AI's suggested outcome — owner (later: 3/4 majority) confirms. */
+  aiPrediction?: Side;
+  /** 0..1 confidence from the AI resolver. */
+  aiConfidence?: number;
 }
 
 /** A stake placed by a user on one side of a market. */
@@ -102,4 +106,5 @@ export interface MarketPool {
 export interface MarketView extends Market {
   pool: MarketPool;
   bets: Bet[];
+  groupOwnerId: ID;
 }

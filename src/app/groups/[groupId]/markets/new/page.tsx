@@ -55,6 +55,7 @@ export default function NewMarketPage() {
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           autoFocus
+          hint="Phrase it as a yes/no question so it can resolve cleanly."
         />
         <div>
           <span className="mb-1.5 block label-hud">

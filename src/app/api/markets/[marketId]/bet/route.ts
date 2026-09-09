@@ -32,6 +32,9 @@ export async function POST(
   if (!group?.memberIds.includes(user.id)) {
     return fail("Market not found", 404);
   }
+  if (group.ownerId === user.id) {
+    return fail("Group owners referee events and cannot bet", 403);
+  }
   if (market.status !== "open") {
     return fail("This market is closed for betting", 409);
   }

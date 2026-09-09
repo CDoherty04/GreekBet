@@ -12,6 +12,7 @@ import { BalancePill } from "@/components/BalancePill";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { MarketCard } from "@/components/MarketCard";
+import { useNow } from "@/components/Countdown";
 import { useRequireUser } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 import type { Group, MarketView, User } from "@/types";
@@ -26,6 +27,7 @@ export default function GroupDetailPage() {
   const [markets, setMarkets] = useState<MarketView[] | null>(null);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const now = useNow();
 
   const load = useCallback(async () => {
     const preview = await api.getGroup(groupId);
@@ -126,7 +128,7 @@ export default function GroupDetailPage() {
                       <p className="mt-1 text-xs text-muted">
                         {m.status === "resolved"
                           ? "Resolved"
-                          : m.expiresAt > Date.now()
+                          : m.expiresAt > now
                             ? "Live"
                             : "Needs resolution"}{" "}
                         · {m.bets.length} bet{m.bets.length === 1 ? "" : "s"}

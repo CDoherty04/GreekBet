@@ -63,7 +63,7 @@ export function seedDemoData(store: Store): void {
     {
       id: "b_1",
       marketId: market.id,
-      userId: alice.id,
+      userId: bob.id,
       side: "yes",
       amount: 40,
       createdAt: now - 1000 * 60 * 20,

@@ -81,5 +81,10 @@ export function toMarketView(market: Market): MarketView {
       userAvatarUrl: user?.avatarUrl,
     };
   });
-  return { ...market, bets, pool: computePool(bets) };
+  return {
+    ...market,
+    bets,
+    pool: computePool(bets),
+    groupOwnerId: db.getGroup(market.groupId)?.ownerId ?? market.createdBy,
+  };
 }

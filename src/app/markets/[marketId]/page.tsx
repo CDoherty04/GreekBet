@@ -57,6 +57,7 @@ export default function MarketDetailPage() {
   if (loading || !user || !market) return <Splash />;
 
   const live = market.status === "open" && market.expiresAt > now;
+  const isOwner = market.groupOwnerId === user.id;
   const myPayout = sumPayout(
     market.bets.filter((b) => b.userId === user.id),
   );
@@ -95,6 +96,11 @@ export default function MarketDetailPage() {
 
         {market.status === "resolved" ? (
           <ResolvedPanel market={market} myPayout={myPayout} />
+        ) : isOwner && live ? (
+          <Card className="text-sm text-muted">
+            You&apos;re the group owner — you referee this event and can&apos;t
+            bet.
+          </Card>
         ) : live ? (
           <BetPanel
             side={side}
@@ -106,6 +112,10 @@ export default function MarketDetailPage() {
             onPlace={placeBet}
             yesProb={market.pool.yesProb}
           />
+        ) : !isOwner ? (
+          <Card className="text-sm text-muted">
+            Betting is closed. Waiting for the owner to resolve.
+          </Card>
         ) : null}
 
         {error && <p className="text-sm text-no">{error}</p>}
@@ -148,11 +158,11 @@ export default function MarketDetailPage() {
         )}
       </div>
 
-      {market.status !== "resolved" && (
+      {market.status !== "resolved" && isOwner && (
         <div className="border-t border-border p-4">
           <Link href={`/markets/${marketId}/resolve`}>
             <Button variant={live ? "secondary" : "primary"}>
-              Resolve with photo
+              {market.aiPrediction ? "Confirm result" : "Resolve with photo"}
             </Button>
           </Link>
         </div>
@@ -294,8 +304,14 @@ function ResolvedPanel({
       </div>
       {market.resolutionNote && (
         <p className="text-sm text-muted">
-          <span className="font-medium text-foreground">AI resolver:</span>{" "}
+          <span className="font-medium text-foreground">AI saw:</span>{" "}
           {market.resolutionNote}
+        </p>
+      )}
+      {market.aiPrediction && (
+        <p className="text-xs text-muted">
+          AI predicted {market.aiPrediction.toUpperCase()} (
+          {Math.round((market.aiConfidence ?? 0) * 100)}% confidence)
         </p>
       )}
     </Card>
