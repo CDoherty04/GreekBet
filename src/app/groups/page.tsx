@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { TopBar } from "@/components/TopBar";
 import { BalancePill } from "@/components/BalancePill";
+import { Avatar } from "@/components/Avatar";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { useRequireUser } from "@/components/SessionProvider";
@@ -25,7 +26,15 @@ export default function GroupsPage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <TopBar title="Your groups" right={<BalancePill />} />
+      <TopBar
+        title="Your Groups"
+        right={
+          <div className="flex items-center gap-2">
+            <BalancePill />
+            <Avatar />
+          </div>
+        }
+      />
       <div className="flex-1 space-y-3 overflow-y-auto p-4 no-scrollbar">
         {groups === null ? (
           <Splash />
@@ -37,7 +46,7 @@ export default function GroupsPage() {
       </div>
       <div className="grid grid-cols-2 gap-3 border-t border-border p-4">
         <Link href="/groups/join">
-          <Button variant="secondary">Join group</Button>
+          <Button variant="secondary">Join</Button>
         </Link>
         <Link href="/groups/new">
           <Button>New group</Button>
@@ -50,15 +59,17 @@ export default function GroupsPage() {
 function GroupRow({ group }: { group: Group }) {
   return (
     <Link href={`/groups/${group.id}`} className="block">
-      <Card className="flex items-center justify-between transition hover:border-brand/60">
+      <Card className="flex items-center justify-between transition hover:border-brand/50">
         <div>
-          <p className="font-semibold">{group.name}</p>
-          <p className="text-xs text-muted">
+          <p className="font-display text-lg font-bold uppercase tracking-wide">
+            {group.name}
+          </p>
+          <p className="label-hud mt-1">
             {group.memberIds.length} member
-            {group.memberIds.length === 1 ? "" : "s"} · code {group.code}
+            {group.memberIds.length === 1 ? "" : "s"}
           </p>
         </div>
-        <span className="text-muted">›</span>
+        <span className="font-display text-xl text-brand">›</span>
       </Card>
     </Link>
   );
@@ -66,10 +77,11 @@ function GroupRow({ group }: { group: Group }) {
 
 function EmptyState() {
   return (
-    <div className="mt-16 text-center text-muted">
-      <div className="mb-2 text-3xl">👥</div>
-      <p className="font-medium text-foreground">No groups yet</p>
-      <p className="mt-1 text-sm">Create one or join with a code to start betting.</p>
+    <div className="mt-16 text-center">
+      <p className="font-display text-2xl font-extrabold uppercase">No groups yet</p>
+      <p className="mt-2 text-sm text-muted">
+        Create one or join with a code to start racing.
+      </p>
     </div>
   );
 }
@@ -77,7 +89,7 @@ function EmptyState() {
 function Splash() {
   return (
     <div className="flex flex-1 items-center justify-center">
-      <span className="h-6 w-6 animate-spin rounded-full border-2 border-muted border-t-transparent" />
+      <span className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" />
     </div>
   );
 }

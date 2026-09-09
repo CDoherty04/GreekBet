@@ -13,7 +13,7 @@ export const TextField = forwardRef<HTMLInputElement, TextFieldProps>(
     return (
       <label htmlFor={inputId} className="block">
         {label && (
-          <span className="mb-1.5 block text-sm font-medium text-muted">
+          <span className="mb-1.5 block label-hud">
             {label}
           </span>
         )}

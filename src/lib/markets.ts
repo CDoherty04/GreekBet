@@ -73,6 +73,13 @@ export function formatProb(prob: number): string {
  * API returns to the client in a single payload.
  */
 export function toMarketView(market: Market): MarketView {
-  const bets = db.listBetsForMarket(market.id);
+  const bets = db.listBetsForMarket(market.id).map((bet) => {
+    const user = db.getUser(bet.userId);
+    return {
+      ...bet,
+      userName: user?.name,
+      userAvatarUrl: user?.avatarUrl,
+    };
+  });
   return { ...market, bets, pool: computePool(bets) };
 }

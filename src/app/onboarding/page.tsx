@@ -51,19 +51,16 @@ export default function OnboardingPage() {
 
   return (
     <div className="flex flex-1 flex-col px-6 py-8">
-      <div className="mb-8 text-center">
-        <div className="mb-2 text-4xl">🎲</div>
-        <h1 className="text-2xl font-bold">Welcome to Groupbet</h1>
-        <p className="mt-1 text-sm text-muted">
-          Private prediction markets with your friends.
-        </p>
-      </div>
+        <div className="mb-8 text-center">
+          <h1 className="font-display text-4xl font-extrabold uppercase leading-none tracking-tight">
+            Welcome to Groupbet
+          </h1>
+        </div>
 
       {step === "selfie" ? (
         <div className="flex flex-1 flex-col">
           <p className="mb-4 text-center text-sm text-muted">
-            Take a selfie to create your account. We use it to verify
-            you&apos;re a real person — no passwords, no email.
+            We use this photo to verify events relevant to you
           </p>
           <PhotoCapture
             facingMode="user"
@@ -93,7 +90,7 @@ export default function OnboardingPage() {
             placeholder="+1 555 123 4567"
             value={phone}
             autoComplete="tel"
-            hint="We'll text you when there's a new market to bet on."
+            hint="We'll text you when there's a new event to bet on."
             onChange={(e) => setPhone(e.target.value)}
           />
           {error && <p className="text-sm text-no">{error}</p>}

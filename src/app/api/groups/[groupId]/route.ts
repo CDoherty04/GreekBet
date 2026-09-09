@@ -1,5 +1,8 @@
 /**
  * /api/groups/[groupId] — group details + its members.
+ *
+ * Non-members can still fetch a public preview (name + member count) so an
+ * invite link like `/groups/{id}` can show a Join screen.
  */
 
 import { db } from "@/lib/store";
@@ -17,13 +20,25 @@ export async function GET(
   const { groupId } = await ctx.params;
   const group = db.getGroup(groupId);
   if (!group) return fail("Group not found", 404);
-  if (!group.memberIds.includes(user.id)) {
-    return fail("You are not a member of this group", 403);
+
+  const isMember = group.memberIds.includes(user.id);
+  if (!isMember) {
+    return ok({
+      group: { ...group, code: "", memberIds: [] },
+      members: [] as User[],
+      isMember: false,
+      memberCount: group.memberIds.length,
+    });
   }
 
   const members = group.memberIds
     .map((id) => db.getUser(id))
     .filter((u): u is User => Boolean(u));
 
-  return ok({ group, members });
+  return ok({
+    group,
+    members,
+    isMember: true,
+    memberCount: members.length,
+  });
 }

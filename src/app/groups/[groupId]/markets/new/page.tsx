@@ -10,11 +10,10 @@ import { TextField } from "@/components/ui/TextField";
 import { useRequireUser } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 
-const DURATIONS: { label: string; ms: number }[] = [
-  { label: "1 hour", ms: 60 * 60 * 1000 },
-  { label: "6 hours", ms: 6 * 60 * 60 * 1000 },
-  { label: "1 day", ms: 24 * 60 * 60 * 1000 },
-  { label: "3 days", ms: 3 * 24 * 60 * 60 * 1000 },
+const UNITS: { label: string; ms: number }[] = [
+  { label: "minutes", ms: 60 * 1000 },
+  { label: "hours", ms: 60 * 60 * 1000 },
+  { label: "days", ms: 24 * 60 * 60 * 1000 },
 ];
 
 export default function NewMarketPage() {
@@ -22,8 +21,8 @@ export default function NewMarketPage() {
   const { user } = useRequireUser();
   const router = useRouter();
   const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [durationIdx, setDurationIdx] = useState(2);
+  const [durationValue, setDurationValue] = useState("1");
+  const [unitIdx, setUnitIdx] = useState(2);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -32,10 +31,11 @@ export default function NewMarketPage() {
     setSubmitting(true);
     setError(null);
     try {
+      const amount = Math.max(1, Number(durationValue) || 0);
+      const ms = amount * UNITS[unitIdx].ms;
       const { market } = await api.createMarket(groupId, {
         title,
-        description: description || undefined,
-        expiresAt: Date.now() + DURATIONS[durationIdx].ms,
+        expiresAt: Date.now() + ms,
       });
       router.replace(`/markets/${market.id}`);
     } catch (e) {
@@ -46,7 +46,7 @@ export default function NewMarketPage() {
 
   return (
     <div className="flex flex-1 flex-col">
-      <TopBar title="New market" back />
+      <TopBar title="New event" back />
       <div className="flex flex-1 flex-col gap-4 p-4">
         <TextField
           label="Question"
@@ -56,39 +56,37 @@ export default function NewMarketPage() {
           onChange={(e) => setTitle(e.target.value)}
           autoFocus
         />
-        <TextField
-          label="Resolution rule (optional)"
-          name="description"
-          placeholder="Resolves YES if it rains before 6pm."
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-        />
         <div>
-          <span className="mb-1.5 block text-sm font-medium text-muted">
+          <span className="mb-1.5 block label-hud">
             Betting closes in
           </span>
-          <div className="grid grid-cols-4 gap-2">
-            {DURATIONS.map((d, i) => (
-              <button
-                key={d.label}
-                onClick={() => setDurationIdx(i)}
-                className={[
-                  "rounded-xl border px-2 py-2.5 text-sm font-medium transition",
-                  i === durationIdx
-                    ? "border-brand bg-brand/15 text-foreground"
-                    : "border-border bg-surface-2 text-muted",
-                ].join(" ")}
-              >
-                {d.label}
-              </button>
-            ))}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={durationValue}
+              onChange={(e) => setDurationValue(e.target.value.replace(/[^\d]/g, ""))}
+              className="w-24 rounded-2xl border border-border bg-surface-2 px-4 py-3.5 text-base text-foreground outline-none focus:border-brand"
+            />
+            <select
+              value={unitIdx}
+              onChange={(e) => setUnitIdx(Number(e.target.value))}
+              className="select-field flex-1 rounded-2xl border border-border bg-surface-2 px-4 py-3.5 text-base text-foreground outline-none focus:border-brand"
+            >
+              {UNITS.map((u, i) => (
+                <option key={u.label} value={i}>
+                  {u.label}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
         {error && <p className="text-sm text-no">{error}</p>}
         <div className="mt-auto">
           <Button
             loading={submitting}
-            disabled={!title.trim() || !user}
+            disabled={!title.trim() || Number(durationValue) < 1 || !user}
             onClick={submit}
           >
             Create market

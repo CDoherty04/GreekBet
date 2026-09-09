@@ -78,6 +78,9 @@ export interface Bet {
   createdAt: number;
   /** Tokens returned once the market resolves (0 if the bet lost). */
   payout?: number;
+  /** Display name, filled in on MarketView (not stored). */
+  userName?: string;
+  userAvatarUrl?: string;
 }
 
 /* ------------------------------------------------------------------ */

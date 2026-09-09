@@ -46,7 +46,7 @@ export default function JoinGroupPage() {
           className="text-center text-2xl font-bold tracking-[0.3em]"
         />
         <p className="text-sm text-muted">
-          Ask a group member for their code, or scan their QR.
+          Ask a group member for their 6-character code.
         </p>
         {error && <p className="text-sm text-no">{error}</p>}
         <div className="mt-auto">

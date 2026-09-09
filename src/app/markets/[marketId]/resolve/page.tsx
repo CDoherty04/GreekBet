@@ -57,7 +57,7 @@ export default function ResolveMarketPage() {
         {!result ? (
           <>
             <p className="text-sm text-muted">
-              Upload a photo that proves the outcome. Our AI resolver reads it
+              Take a photo that proves the outcome. The AI resolver reads it
               and settles the market automatically.
             </p>
             <PhotoCapture
@@ -79,6 +79,14 @@ export default function ResolveMarketPage() {
         ) : (
           <div className="flex flex-1 flex-col gap-4">
             <Card className="space-y-3">
+              {photo && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={photo}
+                  alt="Resolution photo"
+                  className="w-full rounded-xl object-cover"
+                />
+              )}
               <Step
                 label="World · face match"
                 ok={result.faceMatch.match}

@@ -1,14 +1,12 @@
 "use client";
 
 /**
- * PhotoCapture — capture a photo from the camera, with a file-upload fallback.
+ * PhotoCapture — capture a photo from the camera.
  *
  * Reused for both the signup selfie (World Selfie Check) and the market
  * resolution photo (AI resolver). Emits a base64 data URL via `onCapture`.
  *
- * Camera access needs a secure context (https or localhost). If it isn't
- * available (or the user denies it), we fall back to the native file picker,
- * which on phones still opens the camera.
+ * Camera access needs a secure context (https or localhost).
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -53,7 +51,7 @@ export function PhotoCapture({
       }
       setCameraOn(true);
     } catch {
-      setError("Camera unavailable — upload a photo instead.");
+      setError("Camera unavailable. Allow camera access and try again.");
     }
   }, [facingMode]);
 
@@ -74,21 +72,6 @@ export function PhotoCapture({
     onCapture(dataUrl);
     stopCamera();
   }, [onCapture, stopCamera]);
-
-  const onFile = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      const reader = new FileReader();
-      reader.onload = () => {
-        const dataUrl = reader.result as string;
-        setPreview(dataUrl);
-        onCapture(dataUrl);
-      };
-      reader.readAsDataURL(file);
-    },
-    [onCapture],
-  );
 
   const retake = useCallback(() => {
     setPreview(null);
@@ -126,29 +109,20 @@ export function PhotoCapture({
 
       {error && <p className="text-center text-sm text-no">{error}</p>}
 
-      <div className="w-full space-y-2">
+      <div>
         {preview ? (
-          <Button variant="secondary" onClick={retake}>
+          <Button variant="secondary" fullWidth={false} onClick={retake}>
             Retake
           </Button>
         ) : cameraOn ? (
-          <Button onClick={takePhoto}>{captureLabel}</Button>
+          <Button fullWidth={false} onClick={takePhoto}>
+            {captureLabel}
+          </Button>
         ) : (
-          <Button onClick={startCamera}>Open camera</Button>
+          <Button fullWidth={false} onClick={startCamera}>
+            Open camera
+          </Button>
         )}
-
-        <label className="block">
-          <span className="flex w-full cursor-pointer items-center justify-center rounded-2xl border border-border bg-surface-2 px-5 py-3 text-sm font-medium text-muted hover:text-foreground">
-            Or upload a photo
-          </span>
-          <input
-            type="file"
-            accept="image/*"
-            capture={facingMode}
-            onChange={onFile}
-            className="hidden"
-          />
-        </label>
       </div>
     </div>
   );

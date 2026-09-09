@@ -51,7 +51,17 @@ export const api = {
     }),
 
   getGroup: (groupId: string) =>
-    request<{ group: Group; members: User[] }>(`/api/groups/${groupId}`),
+    request<{
+      group: Group;
+      members: User[];
+      isMember: boolean;
+      memberCount: number;
+    }>(`/api/groups/${groupId}`),
+
+  joinGroupById: (groupId: string) =>
+    request<{ group: Group }>(`/api/groups/${groupId}/join`, {
+      method: "POST",
+    }),
 
   // ---- Markets ---------------------------------------------------------
   listMarkets: (groupId: string) =>

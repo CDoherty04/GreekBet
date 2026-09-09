@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 /*
- * Groupbet theme — dark, mobile-first.
- * Tailwind v4 reads design tokens from the @theme block below, exposing
- * utilities like `bg-surface`, `text-muted`, `text-yes`, etc.
+ * Race-game HUD: near-black arena, purple brand, green only for YES/wins.
  */
 @theme {
-  --color-background: #0b0b12;
-  --color-surface: #15151f;
-  --color-surface-2: #1e1e2b;
-  --color-border: #2a2a3a;
-  --color-foreground: #f5f5f7;
+  --color-background: #07080c;
+  --color-surface: #111318;
+  --color-surface-2: #181b22;
+  --color-border: #2a2e38;
+  --color-foreground: #f4f6ef;
   --color-muted: #9a9ab0;
   --color-brand: #7c5cff;
   --color-brand-strong: #6a45ff;
   --color-yes: #34d399;
-  --color-no: #fb7185;
+  --color-no: #ff4d6a;
+  --font-sans: var(--font-dm-sans);
+  --font-display: var(--font-barlow);
 }
 
 html,
@@ -30,11 +30,37 @@ body {
   -webkit-tap-highlight-color: transparent;
 }
 
-/* Hide scrollbars inside the phone frame for a more app-like feel. */
 .no-scrollbar::-webkit-scrollbar {
   display: none;
 }
 .no-scrollbar {
   -ms-overflow-style: none;
   scrollbar-width: none;
+}
+
+.label-hud {
+  font-family: var(--font-display), system-ui, sans-serif;
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--color-muted);
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+.select-field {
+  appearance: none;
+  padding-right: 2.75rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath fill='%239a9ab0' d='M1 1.5 6 6.5 11 1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 1rem center;
 }
