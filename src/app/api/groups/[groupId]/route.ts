@@ -8,6 +8,7 @@
 import { db } from "@/lib/store";
 import { fail, ok } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
+import { toMarketView } from "@/lib/markets";
 import type { User } from "@/types";
 
 export async function GET(
@@ -22,22 +23,34 @@ export async function GET(
   if (!group) return fail("Group not found", 404);
 
   const isMember = group.memberIds.includes(user.id);
-  if (!isMember) {
-    return ok({
-      group: { ...group, code: "", memberIds: [] },
-      members: [] as User[],
-      isMember: false,
-      memberCount: group.memberIds.length,
-    });
-  }
 
   const members = group.memberIds
     .map((id) => db.getUser(id))
     .filter((u): u is User => Boolean(u));
 
+  const markets = db.listMarketsForGroup(groupId).map(toMarketView);
+
+  if (!isMember) {
+    const publicMembers = members.map((u) => ({
+      ...u,
+      phone: "",
+      walletAddress: "",
+      worldId: "",
+      balance: 0,
+    }));
+    return ok({
+      group: { ...group, code: "", memberIds: [] },
+      members: publicMembers,
+      markets,
+      isMember: false,
+      memberCount: members.length,
+    });
+  }
+
   return ok({
     group,
     members,
+    markets,
     isMember: true,
     memberCount: members.length,
   });

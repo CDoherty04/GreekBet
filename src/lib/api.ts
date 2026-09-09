@@ -54,6 +54,7 @@ export const api = {
     request<{
       group: Group;
       members: User[];
+      markets?: MarketView[];
       isMember: boolean;
       memberCount: number;
     }>(`/api/groups/${groupId}`),

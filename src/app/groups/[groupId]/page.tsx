@@ -14,7 +14,7 @@ import { Card } from "@/components/ui/Card";
 import { MarketCard } from "@/components/MarketCard";
 import { useRequireUser } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
-import type { Group, MarketView } from "@/types";
+import type { Group, MarketView, User } from "@/types";
 
 export default function GroupDetailPage() {
   const { groupId } = useParams<{ groupId: string }>();
@@ -22,6 +22,7 @@ export default function GroupDetailPage() {
   const [group, setGroup] = useState<Group | null>(null);
   const [isMember, setIsMember] = useState(false);
   const [memberCount, setMemberCount] = useState(0);
+  const [members, setMembers] = useState<User[]>([]);
   const [markets, setMarkets] = useState<MarketView[] | null>(null);
   const [joining, setJoining] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -31,11 +32,12 @@ export default function GroupDetailPage() {
     setGroup(preview.group);
     setIsMember(preview.isMember);
     setMemberCount(preview.memberCount);
+    setMembers(preview.members);
     if (preview.isMember) {
       const { markets } = await api.listMarkets(groupId);
       setMarkets(markets);
     } else {
-      setMarkets([]);
+      setMarkets(preview.markets ?? []);
     }
   }, [groupId]);
 
@@ -62,20 +64,79 @@ export default function GroupDetailPage() {
   if (!isMember) {
     return (
       <div className="flex flex-1 flex-col">
-        <TopBar title={group.name} back />
-        <div className="flex flex-1 flex-col justify-center gap-4 p-6">
-          <p className="label-hud">Invite</p>
+        <TopBar title="Join group" back />
+        <div className="flex flex-1 flex-col overflow-y-auto p-6 no-scrollbar">
           <h2 className="font-display text-3xl font-extrabold uppercase leading-none">
             {group.name}
           </h2>
-          <p className="text-sm text-muted">
-            {memberCount} member{memberCount === 1 ? "" : "s"} already racing.
-            Join to bet on this group&apos;s markets.
+          <p className="mt-3 text-sm text-muted">
+            {memberCount} member{memberCount === 1 ? "" : "s"} already in this
+            group. Join to bet on this group&apos;s events.
           </p>
-          {error && <p className="text-sm text-no">{error}</p>}
-          <Button loading={joining} onClick={join}>
-            Join group
-          </Button>
+          {error && <p className="mt-3 text-sm text-no">{error}</p>}
+          <div className="mt-5">
+            <Button loading={joining} onClick={join}>
+              Join group
+            </Button>
+          </div>
+
+          <div className="mt-10 space-y-6">
+            <div>
+              <p className="label-hud mb-2">Members</p>
+              {members.length === 0 ? (
+                <p className="text-sm text-muted">No members yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {members.map((m) => (
+                    <Card key={m.id} className="flex items-center gap-3 py-3">
+                      <div className="h-9 w-9 shrink-0 overflow-hidden rounded-full border border-border bg-surface-2">
+                        {m.avatarUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img
+                            src={m.avatarUrl}
+                            alt=""
+                            className="h-full w-full object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-full w-full items-center justify-center font-display text-sm font-bold text-muted">
+                            {m.name.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                      </div>
+                      <p className="truncate font-display text-base font-bold uppercase tracking-wide">
+                        {m.name}
+                      </p>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div>
+              <p className="label-hud mb-2">Events</p>
+              {!markets || markets.length === 0 ? (
+                <p className="text-sm text-muted">No events yet.</p>
+              ) : (
+                <div className="space-y-2">
+                  {markets.map((m) => (
+                    <Card key={m.id}>
+                      <p className="font-display text-base font-bold leading-snug tracking-wide">
+                        {m.title}
+                      </p>
+                      <p className="mt-1 text-xs text-muted">
+                        {m.status === "resolved"
+                          ? "Resolved"
+                          : m.expiresAt > Date.now()
+                            ? "Live"
+                            : "Needs resolution"}{" "}
+                        · {m.bets.length} bet{m.bets.length === 1 ? "" : "s"}
+                      </p>
+                    </Card>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       </div>
     );

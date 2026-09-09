@@ -19,7 +19,7 @@ type Step = "selfie" | "details";
 export default function OnboardingPage() {
   const router = useRouter();
   const { user, loading, setUser } = useSession();
-  const [step, setStep] = useState<Step>("selfie");
+  const [step, setStep] = useState<Step>("details");
   const [selfie, setSelfie] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
@@ -57,23 +57,7 @@ export default function OnboardingPage() {
           </h1>
         </div>
 
-      {step === "selfie" ? (
-        <div className="flex flex-1 flex-col">
-          <p className="mb-4 text-center text-sm text-muted">
-            We use this photo to verify events relevant to you
-          </p>
-          <PhotoCapture
-            facingMode="user"
-            captureLabel="Take selfie"
-            onCapture={setSelfie}
-          />
-          <div className="mt-auto pt-6">
-            <Button disabled={!selfie} onClick={() => setStep("details")}>
-              Continue
-            </Button>
-          </div>
-        </div>
-      ) : (
+      {step === "details" ? (
         <div className="flex flex-1 flex-col gap-4">
           <TextField
             label="Your name"
@@ -93,17 +77,36 @@ export default function OnboardingPage() {
             hint="We'll text you when there's a new event to bet on."
             onChange={(e) => setPhone(e.target.value)}
           />
+          <div className="mt-auto pt-6">
+            <Button
+              disabled={!name.trim() || !phone.trim()}
+              onClick={() => setStep("selfie")}
+            >
+              Continue
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col">
+          <p className="mb-4 text-center text-sm text-muted">
+            We use this photo to verify events relevant to you
+          </p>
+          <PhotoCapture
+            facingMode="user"
+            captureLabel="Take selfie"
+            onCapture={setSelfie}
+          />
           {error && <p className="text-sm text-no">{error}</p>}
           <div className="mt-auto space-y-2 pt-6">
             <Button
               loading={submitting}
-              disabled={!name.trim() || !phone.trim()}
+              disabled={!selfie}
               onClick={submit}
             >
               Create account
             </Button>
-            <Button variant="ghost" onClick={() => setStep("selfie")}>
-              Back to selfie
+            <Button variant="ghost" onClick={() => setStep("details")}>
+              Back
             </Button>
           </div>
         </div>
