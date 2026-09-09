@@ -1,8 +1,12 @@
 "use client";
 
 /**
- * SessionProvider — makes the current user available to every screen and
- * keeps their token balance in sync after bets/payouts.
+ * SessionProvider — makes the current user available to every screen.
+ *
+ * It no longer tracks a balance: money lives on chain, and `BalancePill` reads
+ * it from the wallet directly. Caching it here would mean two sources of truth
+ * for the same number, and the cached one would be wrong the moment a trade
+ * settled.
  */
 
 import {

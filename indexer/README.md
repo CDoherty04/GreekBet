@@ -164,13 +164,47 @@ Two real bugs were caught this way and are now regression-tested:
 
 ## Not done yet
 
-- **Account-state reconciliation** (plan §1.2). Events are the primary source
-  and are sufficient for correctness today; periodic `Market`/`UserPosition`
-  snapshots to detect drift are not built.
-- **A queue adapter** (plan §4 Option B). The interface is proven by two
-  implementations — file and in-memory — but no Redis/NATS adapter exists.
-- **Devnet soak test** (plan §6). Verified over the program's full history and a
-  restart, not over an extended live run.
+**Reconnection is not wired up** (plan §2.3) — the most significant gap, and the
+one to fix first. `Indexer.reconnect()` is implemented and does the right thing:
+resubscribe, backfill from the checkpoint, flush. But nothing calls it on an
+actual disconnect. `RpcChainSource.subscribeLogs` only invokes its `onError` when
+the *batch callback* throws; a dropped websocket never surfaces there, because
+web3.js does not report subscription loss through `onLogs`. So today a dropped
+socket means the indexer goes quiet — no crash, no error, just no events — until
+it is restarted, at which point backfill correctly closes the gap.
+
+Closing this needs a liveness signal rather than an error callback: web3.js
+exposes `Connection._rpcWebSocket` events, or more robustly a watchdog that
+tracks slot progress via `onSlotChange` and treats a stall as a disconnect. The
+recovery machinery it would drive is already built and tested.
+
+**Account-state reconciliation** (plan §1.2). Events are the primary source and
+are sufficient for correctness today; periodic `Market`/`UserPosition` snapshots
+to detect drift are not built. This is the intended defence against exactly the
+silent-stall failure above.
+
+**A queue adapter** (plan §4 Option B). The interface is proven by two
+implementations — file and in-memory — but no Redis/NATS adapter exists.
+
+**Local-validator integration test** (plan §6). The lifecycle test runs against a
+fake `ChainSource` replaying captured devnet transactions, which is stronger data
+but does not exercise a live validator end to end.
+
+**A true disconnect test** (plan §6). "Recovers from a mid-stream gap" simulates
+the gap by restarting the indexer, not by killing a websocket mid-stream — which
+is precisely why the wiring gap above went unnoticed by the tests.
+
+**Devnet soak test** (plan §6). Verified over the program's full history and a
+restart, not over an extended live run.
+
+### Exit criteria, honestly
+
+| criterion | status |
+|---|---|
+| Decoder parses all event types from real logs | **met** — all six, real devnet captures |
+| Recovers from a simulated disconnect, no loss or duplication | **partial** — verified across a restart; a real socket drop is neither wired nor tested |
+| Full lifecycle produces an exactly-once, ordered stream | **met**, but against captured devnet history rather than a local validator |
+| Adapter interface stable enough to swap A → B | **structurally met** — two implementations, no queue built |
 
 One thing worth knowing before building the consumer: `price_yes_after` exists
 **only** in the trade events. The `Market` account stores `q_yes`/`q_no` but not

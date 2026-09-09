@@ -1,26 +1,29 @@
 /**
- * In-memory data store (the "database" for the hackathon).
+ * In-memory data store for the **off-chain** half of the app.
  *
- * Everything lives in Maps held in module state. This is intentionally the
- * simplest thing that works for a demo running on a single server process.
+ * Groups, membership, user profiles, and market metadata (the question text,
+ * which group a market belongs to, the resolution photo). Everything about
+ * money — prices, positions, trades, settlement — lives on chain and is read
+ * through `src/lib/chain/projection.ts`, never from here.
  *
- * LOOKING AHEAD: every read/write goes through the small `db` API below, so
- * swapping this for a real database (Postgres, Sanity, Convex, etc.) later
- * means reimplementing this one file — the API routes never touch the Maps
- * directly. A DB adapter can live in `src/lib/db/`.
+ * Two things that used to live here are gone:
  *
- * The store is attached to `globalThis` so it survives Next.js hot-reloads in
- * development (otherwise every code change would wipe the demo data).
+ * * **Bets.** Trades are on-chain events now; the indexer is the source of
+ *   truth and duplicating them here would let the two disagree.
+ * * **`User.balance`.** Users hold real devnet USDC in a token account, so a
+ *   second internal balance would be a lie the moment anything moved on chain.
+ *
+ * Attached to `globalThis` so it survives Next.js hot-reloads in development.
  */
 
-import type { Bet, Group, ID, Market, User } from "@/types";
+import type { Group, ID, Market, User } from "@/types";
 import { seedDemoData } from "@/lib/db/seed";
 
 interface Store {
   users: Map<ID, User>;
   groups: Map<ID, Group>;
-  markets: Map<ID, Market>;
-  bets: Map<ID, Bet>;
+  /** Keyed by **market PDA**, not an internal id — the PDA is the join key. */
+  markets: Map<string, Market>;
   seeded: boolean;
 }
 
@@ -31,10 +34,8 @@ function createStore(): Store {
     users: new Map(),
     groups: new Map(),
     markets: new Map(),
-    bets: new Map(),
     seeded: false,
   };
-  // Populate a little demo data so screens aren't empty on first load.
   seedDemoData(store);
   store.seeded = true;
   return store;
@@ -42,10 +43,6 @@ function createStore(): Store {
 
 const store: Store = (globalForStore.__groupbetStore ??= createStore());
 
-/**
- * Tiny data-access layer. Keep all persistence logic here so the rest of the
- * app depends on this stable surface rather than on the storage mechanism.
- */
 export const db = {
   // ---- Users -----------------------------------------------------------
   getUser(id: ID): User | undefined {
@@ -53,6 +50,12 @@ export const db = {
   },
   getUserByPhone(phone: string): User | undefined {
     return [...store.users.values()].find((u) => u.phone === phone);
+  },
+  /** Reverse lookup, so on-chain trades can be shown with a name and face. */
+  getUserByWallet(walletAddress: string): User | undefined {
+    return [...store.users.values()].find(
+      (u) => u.walletAddress === walletAddress,
+    );
   },
   createUser(user: User): User {
     store.users.set(user.id, user);
@@ -96,9 +99,9 @@ export const db = {
     return group;
   },
 
-  // ---- Markets ---------------------------------------------------------
-  getMarket(id: ID): Market | undefined {
-    return store.markets.get(id);
+  // ---- Market metadata -------------------------------------------------
+  getMarket(address: string): Market | undefined {
+    return store.markets.get(address);
   },
   listMarketsForGroup(groupId: ID): Market[] {
     return [...store.markets.values()]
@@ -109,41 +112,29 @@ export const db = {
       });
   },
   createMarket(market: Market): Market {
-    store.markets.set(market.id, market);
+    store.markets.set(market.address, market);
     return market;
   },
-  updateMarket(id: ID, patch: Partial<Market>): Market | undefined {
-    const market = store.markets.get(id);
+  updateMarket(address: string, patch: Partial<Market>): Market | undefined {
+    const market = store.markets.get(address);
     if (!market) return undefined;
     const next = { ...market, ...patch };
-    store.markets.set(id, next);
+    store.markets.set(address, next);
     return next;
   },
-  deleteMarket(id: ID): boolean {
-    for (const bet of [...store.bets.values()]) {
-      if (bet.marketId === id) store.bets.delete(bet.id);
-    }
-    return store.markets.delete(id);
-  },
-
-  // ---- Bets ------------------------------------------------------------
-  listBetsForMarket(marketId: ID): Bet[] {
-    return [...store.bets.values()]
-      .filter((b) => b.marketId === marketId)
-      .sort((a, b) => a.createdAt - b.createdAt);
-  },
-  createBet(bet: Bet): Bet {
-    store.bets.set(bet.id, bet);
-    return bet;
-  },
-  updateBet(id: ID, patch: Partial<Bet>): Bet | undefined {
-    const bet = store.bets.get(id);
-    if (!bet) return undefined;
-    const next = { ...bet, ...patch };
-    store.bets.set(id, next);
-    return next;
+  /**
+   * Forget a market's metadata.
+   *
+   * **Off-chain only, and worth being clear about.** The on-chain market, its
+   * vault and everyone's positions are untouched — the program has no delete
+   * and collateral cannot be clawed back. This removes the question text and
+   * the group link, so the app stops showing it; holders can still redeem via
+   * the PDA. Deleting one with live positions strands people in the UI, which
+   * is why the route restricts it.
+   */
+  deleteMarket(address: string): boolean {
+    return store.markets.delete(address);
   },
 };
 
-/** Escape hatch for the seed helper. Avoid using elsewhere. */
 export type { Store };

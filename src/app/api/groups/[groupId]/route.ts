@@ -9,6 +9,7 @@ import { db } from "@/lib/store";
 import { fail, ok } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
 import { toMarketView } from "@/lib/markets";
+import { projection } from "@/lib/chain/projection";
 import type { User } from "@/types";
 
 export async function GET(
@@ -28,23 +29,30 @@ export async function GET(
     .map((id) => db.getUser(id))
     .filter((u): u is User => Boolean(u));
 
+  // One projection read for the whole list rather than per market.
+  const chain = projection();
   const markets = db
     .listMarketsForGroup(groupId)
     .filter((m) => !m.archived)
-    .map(toMarketView);
+    .map((m) => toMarketView(m, chain.get(m.address), user.walletAddress));
 
   if (!isMember) {
+    // A non-member sees the market list as a preview, but nothing that ties a
+    // person to a wallet — the addresses are on a public chain, and joining
+    // them to names here would leak who traded what to anyone with the link.
     const publicMembers = members.map((u) => ({
       ...u,
       phone: "",
       walletAddress: "",
       worldId: "",
-      balance: 0,
     }));
     return ok({
       group: { ...group, code: "", memberIds: [] },
       members: publicMembers,
-      markets,
+      // Titles and odds are fine as a teaser, but the trade list joins wallet
+      // addresses back to names — that is exactly what a non-member must not
+      // see, so it is stripped rather than merely hidden in the UI.
+      markets: markets.map((m) => ({ ...m, trades: [], myPosition: undefined })),
       isMember: false,
       memberCount: members.length,
     });

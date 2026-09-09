@@ -1,35 +1,49 @@
 "use client";
 
 /**
- * Market detail — see the odds, place a yes/no bet with tokens, and (while
- * open) resolve the market from a photo.
+ * Market detail — LMSR odds, buy/sell shares, redeem after resolution.
+ *
+ * The trading panel differs from the old parimutuel one in two ways that
+ * matter to the user, not just the code:
+ *
+ * * **You can sell before resolution.** A position is shares in a market maker,
+ *   not a stake in a pot, so it can be closed at the prevailing price.
+ * * **The quote is live and authoritative.** Before trading, the amount is
+ *   simulated against the real program, so the shares shown are the shares the
+ *   chain will actually mint — not a JavaScript estimate of the curve.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { BalancePill } from "@/components/BalancePill";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { OddsBar } from "@/components/OddsBar";
 import { Countdown, useNow } from "@/components/Countdown";
-import { OwnerEventActions } from "@/components/MarketCard";
 import { useRequireUser } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
-import { formatProb } from "@/lib/markets";
+import { formatProb, winningShares } from "@/lib/markets";
+import { formatUnits, parseUnits, UNIT } from "@/lib/chain/config";
 import type { MarketView, Side } from "@/types";
+
+type Action = "buy" | "sell";
 
 export default function MarketDetailPage() {
   const { marketId } = useParams<{ marketId: string }>();
-  const router = useRouter();
-  const { user, loading, setUser } = useRequireUser();
+  const { user, loading } = useRequireUser();
   const [market, setMarket] = useState<MarketView | null>(null);
   const [side, setSide] = useState<Side>("yes");
-  const [amount, setAmount] = useState("25");
-  const [placing, setPlacing] = useState(false);
-  const [acting, setActing] = useState(false);
+  const [action, setAction] = useState<Action>("buy");
+  const [amount, setAmount] = useState("1");
+  const [quote, setQuote] = useState<{ received: string; avgPrice: string } | null>(
+    null,
+  );
+  const [quoting, setQuoting] = useState(false);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
   const now = useNow();
 
   const load = useCallback(async () => {
@@ -38,59 +52,130 @@ export default function MarketDetailPage() {
   }, [marketId]);
 
   useEffect(() => {
-    // Fetch-on-mount: load the market once we know who the user is.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     if (user) void load().catch(() => setError("Could not load market"));
   }, [user, load]);
 
-  async function placeBet() {
-    setPlacing(true);
+  // A market is created on chain before the indexer sees it. Poll briefly
+  // rather than leaving the screen stuck on "confirming".
+  useEffect(() => {
+    if (!market || market.indexed) return;
+    const t = setInterval(() => void load().catch(() => {}), 3000);
+    return () => clearInterval(t);
+  }, [market, load]);
+
+  // Quote whenever the trade changes. Debounced: each quote is a simulated
+  // transaction against devnet, so firing one per keystroke would be slow and
+  // would draw rate limiting.
+  useEffect(() => {
+    if (!market?.indexed || market.status !== "open") return;
+    let cancelled = false;
+    const handle = setTimeout(async () => {
+      let base: bigint;
+      try {
+        base = parseUnits(amount);
+      } catch {
+        setQuote(null);
+        return;
+      }
+      if (base <= 0n) {
+        setQuote(null);
+        return;
+      }
+      setQuoting(true);
+      try {
+        const q = await api.quote(marketId, {
+          side,
+          action,
+          amount: base.toString(),
+        });
+        if (!cancelled) setQuote(q);
+      } catch {
+        // A quote can legitimately fail — selling more than you hold, a trade
+        // that prices to zero. The trade button surfaces the real reason.
+        if (!cancelled) setQuote(null);
+      } finally {
+        if (!cancelled) setQuoting(false);
+      }
+    }, 400);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [amount, side, action, marketId, market?.indexed, market?.status]);
+
+  async function submitTrade() {
+    setBusy(true);
     setError(null);
+    setNotice(null);
     try {
-      const res = await api.placeBet(marketId, { side, amount: Number(amount) });
+      const base = parseUnits(amount);
+      const res = await api.trade(marketId, {
+        side,
+        action,
+        amount: base.toString(),
+      });
+      setNotice(
+        action === "buy"
+          ? `Bought ${formatUnits(res.received)} ${side.toUpperCase()} shares`
+          : `Sold for $${formatUnits(res.received)}`,
+      );
+      // The projection lags the transaction; refetch until it catches up.
       setMarket(res.market);
-      if (user) setUser({ ...user, balance: res.balance });
+      setTimeout(() => void load().catch(() => {}), 2500);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not place bet");
+      setError(e instanceof Error ? e.message : "Trade failed");
     } finally {
-      setPlacing(false);
+      setBusy(false);
     }
   }
 
-  async function patchMarket(input: { pinned?: boolean; archived?: boolean }) {
-    setActing(true);
+  async function submitRedeem() {
+    setBusy(true);
     setError(null);
     try {
-      const res = await api.updateMarket(marketId, input);
+      const res = await api.redeem(marketId);
       setMarket(res.market);
+      setNotice("Redeemed");
+      setTimeout(() => void load().catch(() => {}), 2500);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not update event");
+      setError(e instanceof Error ? e.message : "Could not redeem");
     } finally {
-      setActing(false);
-    }
-  }
-
-  async function deleteEvent() {
-    if (!market) return;
-    if (!window.confirm(`Delete “${market.title}”? This can’t be undone.`)) return;
-    setActing(true);
-    setError(null);
-    try {
-      await api.deleteMarket(marketId);
-      router.push(`/groups/${market.groupId}`);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not delete event");
-      setActing(false);
+      setBusy(false);
     }
   }
 
   if (loading || !user || !market) return <Splash />;
 
+  if (!market.indexed) {
+    return (
+      <div className="flex flex-1 flex-col">
+        <TopBar back centerTitle right={<BalancePill />} />
+        <div className="flex-1 space-y-4 p-4">
+          <h1 className="font-display text-2xl font-extrabold uppercase leading-tight tracking-wide">
+            {market.title}
+          </h1>
+          <Card>
+            <p className="text-sm text-muted">
+              Confirming on chain. This takes a few seconds on devnet.
+            </p>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   const live = market.status === "open" && market.expiresAt > now;
+  // The group owner referees: they confirm the result, so they do not trade.
+  // Keeping the referee out of the book is the whole reason that split exists.
   const isOwner = market.groupOwnerId === user.id;
-  const myPayout = sumPayout(
-    market.bets.filter((b) => b.userId === user.id),
-  );
+  const pos = market.myPosition;
+  const held = pos
+    ? side === "yes"
+      ? pos.yesShares
+      : pos.noShares
+    : "0";
+  const myWinnings = winningShares(market);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -109,111 +194,115 @@ export default function MarketDetailPage() {
           <h1 className="font-display text-2xl font-extrabold uppercase leading-tight tracking-wide">
             {market.title}
           </h1>
-          {(market.pinned || market.archived) && (
-            <div className="mt-2 flex flex-wrap gap-1.5">
-              {market.pinned && (
-                <span className="rounded-md border border-brand/40 bg-brand/15 px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-brand">
-                  PINNED
-                </span>
-              )}
-              {market.archived && (
-                <span className="rounded-md border border-border bg-surface-2 px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-muted">
-                  ARCHIVED
-                </span>
-              )}
-            </div>
-          )}
           {market.description && (
             <p className="mt-1 text-sm text-muted">{market.description}</p>
-          )}
-          {isOwner && (
-            <OwnerEventActions
-              market={market}
-              busy={acting}
-              onPin={() => void patchMarket({ pinned: !market.pinned })}
-              onArchive={() => void patchMarket({ archived: !market.archived })}
-              onDelete={() => void deleteEvent()}
-            />
           )}
         </div>
 
         <Card>
-          <OddsBar pool={market.pool} />
+          <OddsBar pricing={market.pricing} />
           <div className="mt-3 flex justify-between text-xs text-muted">
-            <span>🪙 {market.pool.total.toLocaleString()} pool</span>
+            <span>${formatUnits(market.pricing.volume)} in the vault</span>
             <span>
-              {market.bets.length} bet{market.bets.length === 1 ? "" : "s"}
+              {market.trades.length} trade
+              {market.trades.length === 1 ? "" : "s"}
             </span>
           </div>
+          <p className="mt-2 text-[11px] text-muted">
+            Priced by an LMSR market maker · liquidity $
+            {formatUnits(market.pricing.b, 0)}
+          </p>
         </Card>
 
-        {market.status === "resolved" ? (
-          <ResolvedPanel market={market} myPayout={myPayout} />
-        ) : (
-          <>
-            {market.resolutionImageUrl && (
-              <PendingResolution market={market} />
-            )}
-            {isOwner && live ? (
-              <Card className="text-sm text-muted">
-                You&apos;re the group owner — you referee this event and
-                can&apos;t bet.
-              </Card>
-            ) : live ? (
-              <BetPanel
-                side={side}
-                setSide={setSide}
-                amount={amount}
-                setAmount={setAmount}
-                balance={user.balance}
-                placing={placing}
-                onPlace={placeBet}
-                yesProb={market.pool.yesProb}
-              />
-            ) : !isOwner && !market.resolutionImageUrl ? (
-              <Card className="text-sm text-muted">
-                Betting is closed. Submit a photo, then the owner will confirm
-                the result.
-              </Card>
-            ) : null}
-          </>
+        {pos && (Number(pos.yesShares) > 0 || Number(pos.noShares) > 0) && (
+          <Card className="space-y-1">
+            <p className="label-hud">Your position</p>
+            <div className="flex gap-4 text-sm">
+              <span className="text-yes">
+                {formatUnits(pos.yesShares)} YES
+              </span>
+              <span className="text-no">{formatUnits(pos.noShares)} NO</span>
+            </div>
+          </Card>
         )}
 
+        {market.resolutionImageUrl && market.status !== "resolved" && (
+          <PendingResolution market={market} />
+        )}
+
+        {market.status === "resolved" ? (
+          <ResolvedPanel
+            market={market}
+            winning={myWinnings}
+            busy={busy}
+            onRedeem={submitRedeem}
+          />
+        ) : isOwner && live ? (
+          <Card className="text-sm text-muted">
+            You&apos;re the group owner — you referee this event and can&apos;t
+            trade in it.
+          </Card>
+        ) : live ? (
+          <TradePanel
+            side={side}
+            setSide={setSide}
+            action={action}
+            setAction={setAction}
+            amount={amount}
+            setAmount={setAmount}
+            quote={quote}
+            quoting={quoting}
+            busy={busy}
+            held={held}
+            yesProb={market.pricing.yesProb}
+            onSubmit={submitTrade}
+          />
+        ) : (
+          <Card>
+            <p className="text-sm text-muted">
+              Trading is closed. Waiting on resolution.
+            </p>
+          </Card>
+        )}
+
+        {notice && <p className="text-sm text-yes">{notice}</p>}
         {error && <p className="text-sm text-no">{error}</p>}
 
-        {market.bets.length > 0 && (
+        {market.trades.length > 0 && (
           <div>
-            <p className="label-hud mb-2">Bets</p>
+            <p className="label-hud mb-2">Trades</p>
             <div className="space-y-2">
-              {market.bets.map((b) => (
-                <div
-                  key={b.id}
-                  className="flex items-center justify-between rounded-xl border border-border bg-surface px-3 py-2 text-sm"
-                >
-                  <div className="flex min-w-0 items-center gap-2">
-                    <BetAvatar
-                      name={b.userName ?? "Someone"}
-                      avatarUrl={b.userAvatarUrl}
-                    />
-                    <span className="truncate">
-                      {b.userName ?? "Someone"}
-                      {b.userId === user.id ? " · you" : ""}
-                    </span>
-                  </div>
-                  <div className="ml-3 flex shrink-0 items-center gap-2">
-                    <span
-                      className={b.side === "yes" ? "text-yes" : "text-no"}
-                    >
-                      {b.side.toUpperCase()} · {b.amount}
-                    </span>
-                    {b.payout !== undefined && (
-                      <span className={b.payout > 0 ? "text-yes" : "text-muted"}>
-                        {b.payout > 0 ? `+${b.payout}` : "—"}
+              {market.trades
+                .slice()
+                .reverse()
+                .map((t) => (
+                  <div
+                    key={`${t.signature}-${t.slot}-${t.user}`}
+                    className="flex items-center justify-between rounded-xl border border-border bg-surface px-3 py-2 text-sm"
+                  >
+                    <div className="flex min-w-0 items-center gap-2">
+                      <TradeAvatar
+                        name={t.userName ?? shorten(t.user)}
+                        avatarUrl={t.userAvatarUrl}
+                      />
+                      <span className="truncate">
+                        {t.userName ?? shorten(t.user)}
+                        {t.user === user.walletAddress ? " · you" : ""}
                       </span>
-                    )}
+                    </div>
+                    <div className="ml-3 flex shrink-0 items-center gap-2">
+                      <span className="text-muted">
+                        {t.isBuy ? "bought" : "sold"}
+                      </span>
+                      <span className={t.side === "yes" ? "text-yes" : "text-no"}>
+                        {formatUnits(t.shares)} {t.side.toUpperCase()}
+                      </span>
+                      <span className="text-muted">
+                        ${formatUnits(t.collateral)}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           </div>
         )}
@@ -221,13 +310,9 @@ export default function MarketDetailPage() {
 
       {market.status !== "resolved" && (
         <div className="border-t border-border p-4">
-          <Link href={`/markets/${marketId}/resolve`}>
+          <Link href={`/markets/${market.address}/resolve`}>
             <Button variant={live ? "secondary" : "primary"}>
-              {market.aiPrediction
-                ? isOwner
-                  ? "Confirm result"
-                  : "View photo"
-                : "Submit photo"}
+              Resolve with photo
             </Button>
           </Link>
         </div>
@@ -236,43 +321,51 @@ export default function MarketDetailPage() {
   );
 }
 
-function parseAmount(raw: string): number | null {
-  if (!raw.trim()) return null;
-  if (!/^\d+$/.test(raw.trim())) return null;
-  const n = Number(raw);
-  if (!Number.isInteger(n) || n <= 0) return null;
-  return n;
+function shorten(addr: string): string {
+  return addr.length > 10 ? `${addr.slice(0, 4)}…${addr.slice(-4)}` : addr;
 }
 
-function amountError(raw: string, balance: number): string | null {
-  if (!raw.trim()) return "Enter an amount";
-  const n = parseAmount(raw);
-  if (n === null) return "Enter a whole number";
-  if (n > balance) return "Not enough tokens";
-  return null;
-}
-
-function BetPanel({
+function TradePanel({
   side,
   setSide,
+  action,
+  setAction,
   amount,
   setAmount,
-  balance,
-  placing,
-  onPlace,
+  quote,
+  quoting,
+  busy,
+  held,
   yesProb,
+  onSubmit,
 }: {
   side: Side;
   setSide: (s: Side) => void;
+  action: Action;
+  setAction: (a: Action) => void;
   amount: string;
-  setAmount: (n: string) => void;
-  balance: number;
-  placing: boolean;
-  onPlace: () => void;
+  setAmount: (v: string) => void;
+  quote: { received: string; avgPrice: string } | null;
+  quoting: boolean;
+  busy: boolean;
+  held: string;
   yesProb: number;
+  onSubmit: () => void;
 }) {
-  const parsed = parseAmount(amount);
-  const error = amountError(amount, balance);
+  let parsed: bigint | null = null;
+  let parseError: string | null = null;
+  try {
+    parsed = parseUnits(amount);
+    if (parsed <= 0n) parseError = "Enter an amount";
+  } catch (e) {
+    parseError = e instanceof Error ? e.message : "Invalid amount";
+  }
+
+  // Selling more than you hold is the one error worth catching before the
+  // round trip — the chain would reject it, but only after a slow trip.
+  const overSell =
+    action === "sell" && parsed !== null && parsed > BigInt(held || "0");
+
   return (
     <Card className="space-y-4">
       <div className="grid grid-cols-2 gap-3">
@@ -280,12 +373,12 @@ function BetPanel({
           onClick={() => setSide("yes")}
           className={[
             "rounded-2xl border-2 py-4 text-center transition",
-            side === "yes"
-              ? "border-yes bg-yes/15"
-              : "border-border bg-surface-2",
+            side === "yes" ? "border-yes bg-yes/15" : "border-border bg-surface-2",
           ].join(" ")}
         >
-          <div className="text-lg font-display font-bold tracking-wide text-yes">YES</div>
+          <div className="font-display text-lg font-bold tracking-wide text-yes">
+            YES
+          </div>
           <div className="text-xs text-muted">{formatProb(yesProb)}</div>
         </button>
         <button
@@ -295,95 +388,113 @@ function BetPanel({
             side === "no" ? "border-no bg-no/15" : "border-border bg-surface-2",
           ].join(" ")}
         >
-          <div className="text-lg font-display font-bold tracking-wide text-no">NO</div>
+          <div className="font-display text-lg font-bold tracking-wide text-no">
+            NO
+          </div>
           <div className="text-xs text-muted">{formatProb(1 - yesProb)}</div>
         </button>
       </div>
 
+      <div className="grid grid-cols-2 gap-2">
+        {(["buy", "sell"] as const).map((a) => (
+          <button
+            key={a}
+            onClick={() => setAction(a)}
+            className={[
+              "rounded-xl border py-2 text-sm font-semibold uppercase tracking-wide transition",
+              action === a
+                ? "border-brand bg-brand/15 text-brand"
+                : "border-border bg-surface-2 text-muted",
+            ].join(" ")}
+          >
+            {a}
+          </button>
+        ))}
+      </div>
+
       <label className="block">
         <span className="mb-1.5 block label-hud">
-          Amount
+          {action === "buy" ? "Spend (USDC)" : "Sell (shares)"}
         </span>
         <input
           type="text"
-          inputMode="numeric"
-          pattern="[0-9]*"
+          inputMode="decimal"
           name="amount"
-          placeholder="25"
+          placeholder="1.00"
           value={amount}
-          onChange={(e) => setAmount(e.target.value.replace(/[^\d]/g, ""))}
+          onChange={(e) => setAmount(e.target.value.replace(/[^\d.]/g, ""))}
           className={[
             "w-full rounded-2xl border bg-surface-2 px-4 py-3.5 text-base text-foreground outline-none",
-            error ? "border-no" : "border-border focus:border-brand",
+            parseError || overSell ? "border-no" : "border-border focus:border-brand",
           ].join(" ")}
         />
-        <span className={`mt-1.5 block text-xs ${error ? "text-no" : "text-muted"}`}>
-          {error ?? `${balance.toLocaleString()} tokens available`}
+        <span
+          className={`mt-1.5 block text-xs ${
+            parseError || overSell ? "text-no" : "text-muted"
+          }`}
+        >
+          {overSell
+            ? `You hold ${formatUnits(held)} ${side.toUpperCase()}`
+            : (parseError ??
+              (action === "sell"
+                ? `${formatUnits(held)} ${side.toUpperCase()} available`
+                : "Priced by the market maker"))}
         </span>
       </label>
 
+      <div className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm">
+        {quoting ? (
+          <span className="text-muted">Quoting…</span>
+        ) : quote ? (
+          <div className="flex items-center justify-between">
+            <span className="text-muted">
+              {action === "buy" ? "You receive" : "You get"}
+            </span>
+            <span className="font-semibold">
+              {action === "buy"
+                ? `${formatUnits(quote.received)} ${side.toUpperCase()}`
+                : `$${formatUnits(quote.received)}`}
+              <span className="ml-2 text-xs font-normal text-muted">
+                @ {Math.round((Number(quote.avgPrice) / UNIT) * 100)}¢
+              </span>
+            </span>
+          </div>
+        ) : (
+          <span className="text-muted">Enter an amount for a quote</span>
+        )}
+      </div>
+
       <Button
         variant={side === "yes" ? "yes" : "no"}
-        loading={placing}
-        disabled={parsed === null || parsed > balance}
-        onClick={onPlace}
+        loading={busy}
+        disabled={parsed === null || parseError !== null || overSell}
+        onClick={onSubmit}
       >
-        Bet {parsed ?? 0} on {side.toUpperCase()}
+        {action === "buy" ? "Buy" : "Sell"} {side.toUpperCase()}
       </Button>
-    </Card>
-  );
-}
-
-function PendingResolution({ market }: { market: MarketView }) {
-  const predicted = market.aiPrediction;
-  const confidence = Math.round((market.aiConfidence ?? 0) * 100);
-  return (
-    <Card className="space-y-3">
-      {/* eslint-disable-next-line @next/next/no-img-element */}
-      <img
-        src={market.resolutionImageUrl}
-        alt="Resolution photo"
-        className="w-full rounded-xl object-cover"
-      />
-      {predicted && (
-        <>
-          <p className="label-hud">AI prediction</p>
-          <div className="flex items-center justify-between">
-            <span
-              className={[
-                "font-display text-2xl font-extrabold tracking-wide",
-                predicted === "yes" ? "text-yes" : "text-no",
-              ].join(" ")}
-            >
-              {predicted.toUpperCase()}
-            </span>
-            <span className="font-display text-sm font-bold tabular-nums text-muted">
-              {confidence}% confidence
-            </span>
-          </div>
-          <div className="h-2 overflow-hidden rounded-full bg-surface-2">
-            <div
-              className={predicted === "yes" ? "h-full bg-yes" : "h-full bg-no"}
-              style={{ width: `${confidence}%` }}
-            />
-          </div>
-        </>
-      )}
-      {market.resolutionNote && (
-        <p className="text-sm text-muted">“{market.resolutionNote}”</p>
-      )}
     </Card>
   );
 }
 
 function ResolvedPanel({
   market,
-  myPayout,
+  winning,
+  busy,
+  onRedeem,
 }: {
   market: MarketView;
-  myPayout: number;
+  winning: string;
+  busy: boolean;
+  onRedeem: () => void;
 }) {
   const won = market.outcome === "yes";
+  const redeemed = market.myPosition?.redeemed ?? false;
+  const canRedeem =
+    !redeemed &&
+    market.myPosition !== undefined &&
+    (Number(market.myPosition.yesShares) > 0 ||
+      Number(market.myPosition.noShares) > 0);
+
   return (
     <Card className="space-y-3">
       {market.resolutionImageUrl && (
@@ -403,29 +514,86 @@ function ResolvedPanel({
         >
           Resolved {market.outcome?.toUpperCase()}
         </span>
-        {myPayout > 0 && (
+        {Number(winning) > 0 && (
           <span className="text-sm font-semibold text-yes">
-            You won 🪙 {myPayout}
+            {formatUnits(winning)} winning shares
           </span>
         )}
       </div>
+
       {market.resolutionNote && (
         <p className="text-sm text-muted">
-          <span className="font-medium text-foreground">AI saw:</span>{" "}
+          <span className="font-medium text-foreground">AI resolver:</span>{" "}
           {market.resolutionNote}
         </p>
       )}
-      {market.aiPrediction && (
-        <p className="text-xs text-muted">
-          AI predicted {market.aiPrediction.toUpperCase()} (
-          {Math.round((market.aiConfidence ?? 0) * 100)}% confidence)
+
+      {redeemed && market.myPosition?.payout !== undefined && (
+        <p className="text-sm text-yes">
+          Redeemed ${formatUnits(market.myPosition.payout)}
         </p>
+      )}
+
+      {canRedeem && (
+        <Button loading={busy} onClick={onRedeem}>
+          {Number(winning) > 0
+            ? `Redeem $${formatUnits(winning)}`
+            : "Close out position"}
+        </Button>
       )}
     </Card>
   );
 }
 
-function BetAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
+/**
+ * The AI has read the photo but nobody has settled anything yet.
+ *
+ * Shown to everyone, deliberately: the reading is public before it becomes
+ * binding, so members can object to the owner before an irreversible on-chain
+ * write. The confidence figure is included for the same reason — a low number
+ * is exactly when a human should look harder.
+ */
+function PendingResolution({ market }: { market: MarketView }) {
+  return (
+    <Card className="space-y-2">
+      <p className="label-hud">Awaiting the owner&apos;s confirmation</p>
+      {market.resolutionImageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={market.resolutionImageUrl}
+          alt="Resolution photo"
+          className="w-full rounded-xl object-cover"
+        />
+      )}
+      {market.aiPrediction && (
+        <p className="text-sm">
+          <span className="text-muted">AI reads this as</span>{" "}
+          <span
+            className={
+              market.aiPrediction === "yes" ? "text-yes" : "text-no"
+            }
+          >
+            {market.aiPrediction.toUpperCase()}
+          </span>
+          {market.aiConfidence !== undefined && (
+            <span className="ml-2 text-xs text-muted">
+              {Math.round(market.aiConfidence * 100)}% confident
+            </span>
+          )}
+        </p>
+      )}
+      {market.resolutionNote && (
+        <p className="text-sm text-muted">{market.resolutionNote}</p>
+      )}
+      <p className="text-xs text-muted">
+        Nothing is settled until the group owner confirms. That write goes on
+        chain and cannot be undone.
+      </p>
+    </Card>
+  );
+}
+
+function TradeAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
   return (
     <div className="h-7 w-7 shrink-0 overflow-hidden rounded-full border border-border bg-surface-2">
       {avatarUrl ? (
@@ -438,10 +606,6 @@ function BetAvatar({ name, avatarUrl }: { name: string; avatarUrl?: string }) {
       )}
     </div>
   );
-}
-
-function sumPayout(bets: MarketView["bets"]): number {
-  return bets.reduce((sum, b) => sum + (b.payout ?? 0), 0);
 }
 
 function Splash() {

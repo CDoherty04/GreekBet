@@ -1,13 +1,23 @@
 /**
  * Demo seed data so the app has something to show on first load.
  *
- * This lives under `src/lib/db/` because it's storage-adjacent — when the
- * in-memory store is replaced by a real database, seeding logic belongs here
- * too. It is called once by `src/lib/store.ts` when the store is created.
+ * Storage-adjacent, so it lives beside the store and is called once when the
+ * store is created.
+ *
+ * **Only off-chain data is seeded.** A market cannot be faked into existence
+ * here: it is an on-chain PDA with a real vault holding real collateral, and
+ * the app learns about it from the indexer. Seeding a fake one would produce a
+ * row the UI renders as pending forever, because no chain state will ever
+ * arrive for it. So the demo group starts empty and its first market is created
+ * for real, on chain, through the app.
+ *
+ * The demo users' wallets are generated on demand by
+ * `src/lib/chain/wallet.ts` — the placeholder EVM-shaped strings that used to
+ * be here could never have signed a Solana transaction.
  */
 
 import type { Store } from "@/lib/store";
-import type { Bet, Group, Market, User } from "@/types";
+import type { Group, User } from "@/types";
 
 export function seedDemoData(store: Store): void {
   const now = Date.now();
@@ -17,10 +27,10 @@ export function seedDemoData(store: Store): void {
     name: "Alice",
     phone: "+15550000001",
     avatarUrl: "",
-    walletAddress: "0xa11ce0000000000000000000000000000000a11c",
+    // Filled in on first sign-in, when the keypair is provisioned.
+    walletAddress: "",
     worldId: "0xworld_alice",
     verified: true,
-    balance: 500,
     createdAt: now - 1000 * 60 * 60,
   };
   const bob: User = {
@@ -28,10 +38,9 @@ export function seedDemoData(store: Store): void {
     name: "Bob",
     phone: "+15550000002",
     avatarUrl: "",
-    walletAddress: "0xb0b0000000000000000000000000000000000b0b",
+    walletAddress: "",
     worldId: "0xworld_bob",
     verified: true,
-    balance: 500,
     createdAt: now - 1000 * 60 * 55,
   };
   store.users.set(alice.id, alice);
@@ -46,36 +55,4 @@ export function seedDemoData(store: Store): void {
     createdAt: now - 1000 * 60 * 50,
   };
   store.groups.set(group.id, group);
-
-  const market: Market = {
-    id: "m_burrito",
-    groupId: group.id,
-    title: "Will Charlie finish the whole burrito? 🌯",
-    description: "Resolves YES if the plate is empty within 20 minutes.",
-    createdBy: alice.id,
-    createdAt: now - 1000 * 60 * 30,
-    expiresAt: now + 1000 * 60 * 60 * 2,
-    status: "open",
-  };
-  store.markets.set(market.id, market);
-
-  const bets: Bet[] = [
-    {
-      id: "b_1",
-      marketId: market.id,
-      userId: bob.id,
-      side: "yes",
-      amount: 40,
-      createdAt: now - 1000 * 60 * 20,
-    },
-    {
-      id: "b_2",
-      marketId: market.id,
-      userId: bob.id,
-      side: "no",
-      amount: 25,
-      createdAt: now - 1000 * 60 * 15,
-    },
-  ];
-  for (const bet of bets) store.bets.set(bet.id, bet);
 }

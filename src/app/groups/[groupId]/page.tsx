@@ -76,21 +76,29 @@ export default function GroupDetailPage() {
     }
   }
 
+  // Markets are keyed by their on-chain PDA now, not an internal id.
   function pinMarket(m: MarketView) {
-    void runOwnerAction(m.id, () =>
-      api.updateMarket(m.id, { pinned: !m.pinned }),
+    void runOwnerAction(m.address, () =>
+      api.updateMarket(m.address, { pinned: !m.pinned }),
     );
   }
 
   function archiveMarket(m: MarketView) {
-    void runOwnerAction(m.id, () =>
-      api.updateMarket(m.id, { archived: !m.archived }),
+    void runOwnerAction(m.address, () =>
+      api.updateMarket(m.address, { archived: !m.archived }),
     );
   }
 
   function deleteMarket(m: MarketView) {
-    if (!window.confirm(`Delete “${m.title}”? This can’t be undone.`)) return;
-    void runOwnerAction(m.id, () => api.deleteMarket(m.id));
+    // Worth being precise in the prompt: this forgets the app's copy, it does
+    // not and cannot destroy the on-chain market or anyone's collateral.
+    if (
+      !window.confirm(
+        `Remove “${m.title}” from this group? The on-chain market and everyone’s positions are unaffected.`,
+      )
+    )
+      return;
+    void runOwnerAction(m.address, () => api.deleteMarket(m.address));
   }
 
   if (loading || !user || !group) return <Splash />;
@@ -157,17 +165,20 @@ export default function GroupDetailPage() {
               ) : (
                 <div className="space-y-2">
                   {markets.map((m) => (
-                    <Card key={m.id}>
+                    <Card key={m.address}>
                       <p className="font-display text-base font-bold leading-snug tracking-wide">
                         {m.title}
                       </p>
                       <p className="mt-1 text-xs text-muted">
-                        {m.status === "resolved"
-                          ? "Resolved"
-                          : m.expiresAt > now
-                            ? "Live"
-                            : "Needs resolution"}{" "}
-                        · {m.bets.length} bet{m.bets.length === 1 ? "" : "s"}
+                        {!m.indexed
+                          ? "Confirming on chain"
+                          : m.status === "resolved"
+                            ? "Resolved"
+                            : m.expiresAt > now
+                              ? "Live"
+                              : "Needs resolution"}{" "}
+                        · {m.trades.length} trade
+                        {m.trades.length === 1 ? "" : "s"}
                       </p>
                     </Card>
                   ))}
@@ -231,10 +242,10 @@ export default function GroupDetailPage() {
         ) : (
           active.map((m) => (
             <MarketCard
-              key={m.id}
+              key={m.address}
               market={m}
               isOwner={isOwner}
-              busy={busyId === m.id}
+              busy={busyId === m.address}
               onPin={() => pinMarket(m)}
               onArchive={() => archiveMarket(m)}
               onDelete={() => deleteMarket(m)}
@@ -256,11 +267,11 @@ export default function GroupDetailPage() {
             )}
             {(showArchived || active.length === 0) &&
               archived.map((m) => (
-                <div key={m.id} className="mb-3">
+                <div key={m.address} className="mb-3">
                   <MarketCard
                     market={m}
                     isOwner={isOwner}
-                    busy={busyId === m.id}
+                    busy={busyId === m.address}
                     onPin={() => pinMarket(m)}
                     onArchive={() => archiveMarket(m)}
                     onDelete={() => deleteMarket(m)}

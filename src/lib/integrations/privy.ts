@@ -1,12 +1,29 @@
 /**
- * Privy — embedded wallet integration (STUB).
+ * Privy — embedded wallet integration (STUB, now Solana-shaped).
  *
  * Bounty: best financial flow. Wallets are created automatically at signup
  * (from just a selfie + phone number) — the user never sees seed phrases.
  *
- * TODO(real): replace with Privy server/client SDK to provision an embedded
- * wallet for the authenticated user. Keep the signature identical.
+ * ## What changed and why
+ *
+ * This previously returned a random **EVM** address (`0x…`). Markets settle on
+ * **Solana**, so such an address could never sign a transaction or own a token
+ * account — it was display-only, which was fine while balances were internal
+ * play tokens and is not fine now that trades are real.
+ *
+ * It now provisions a genuine Solana keypair via `src/lib/chain/wallet.ts`. The
+ * key is held **server-side**: that is custodial, deliberately, because there is
+ * no browser signer until real Privy is wired up, and it preserves the
+ * "no seed phrase" onboarding the product is built around.
+ *
+ * TODO(real): swap the body for Privy's server SDK with Solana embedded
+ * wallets. The signature below is unchanged, and nothing above this module
+ * touches a secret key — callers only ever see the address.
  */
+
+import "server-only";
+
+import { keypairFor } from "@/lib/chain/wallet";
 
 export interface Wallet {
   address: string;
@@ -14,23 +31,20 @@ export interface Wallet {
   provider: "privy";
 }
 
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
 /**
- * Provision an embedded wallet for a newly created user.
- * @param _userId the internal user id to associate the wallet with
+ * Provision an embedded wallet for a user.
+ *
+ * Deterministic per `userId`: calling it again returns the same address rather
+ * than orphaning the previous one along with any funds in it.
  */
-export async function createWallet(_userId: string): Promise<Wallet> {
-  await delay(600);
-  // STUB: a random-looking EVM address.
-  const address = `0x${crypto.randomUUID().replace(/-/g, "").slice(0, 40)}`;
-  return { address, provider: "privy" };
+export async function createWallet(userId: string): Promise<Wallet> {
+  const keypair = keypairFor(userId);
+  return { address: keypair.publicKey.toBase58(), provider: "privy" };
 }
 
-/** Short display form of an address, e.g. "0x1234…abcd". */
+/** Short display form, e.g. "7xKX…gAsU". */
 export function shortAddress(address: string): string {
+  if (!address) return "";
   if (address.length <= 12) return address;
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
+  return `${address.slice(0, 4)}…${address.slice(-4)}`;
 }

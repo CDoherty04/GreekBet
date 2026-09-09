@@ -1,6 +1,9 @@
 {
   "compilerOptions": {
-    "target": "ES2017",
+    // ES2020 for BigInt literals. Share and collateral amounts are u64 base
+    // units that a JS number cannot hold safely, so they are handled as bigint
+    // throughout `src/lib/chain`.
+    "target": "ES2020",
     "lib": ["dom", "dom.iterable", "esnext"],
     "allowJs": true,
     "skipLibCheck": true,
@@ -30,5 +33,9 @@
     ".next/dev/types/**/*.ts",
     "**/*.mts"
   ],
-  "exclude": ["node_modules"]
+  // `contracts/` and `indexer/` are separate packages with their own
+  // tsconfigs, dependencies and compile targets. Without excluding them the
+  // app's checker pulls in their mocha globals and Node-only code and reports
+  // dozens of errors that belong to neither project.
+  "exclude": ["node_modules", "contracts", "indexer"]
 }

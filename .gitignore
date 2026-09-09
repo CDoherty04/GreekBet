@@ -39,3 +39,14 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# SECRET KEY MATERIAL — never commit.
+# `src/lib/chain/wallet.ts` writes each user's Solana keypair here, plus the
+# resolver and fee-payer keys. Committing this hands over every wallet the app
+# custodies. Devnet only, but the habit is what matters.
+/.data/
+*keypair*.json
+
+# Indexer runtime state: the event stream and its checkpoint are machine-local,
+# and committing them would replay stale events into whatever consumes them.
+/indexer/data/
