@@ -15,6 +15,7 @@ import { createMarket } from "@/lib/chain/actions";
 import { getChainMarket, projection } from "@/lib/chain/projection";
 import { keypairFor, resolverKeypair } from "@/lib/chain/wallet";
 import { B_MAX, B_MIN, DEFAULT_B } from "@/lib/chain/config";
+import { notifyNewEvent, requestOrigin } from "@/lib/integrations/telegram";
 import type { Market } from "@/types";
 
 export async function GET(
@@ -99,6 +100,17 @@ export async function POST(
       createSignature: created.signature,
     };
     db.createMarket(market);
+
+    const chatIds = group.memberIds
+      .filter((id) => id !== user.id)
+      .map((id) => db.getUser(id)?.telegramChatId)
+      .filter((id): id is string => Boolean(id));
+    void notifyNewEvent({
+      chatIds,
+      groupName: group.name,
+      title,
+      url: `${requestOrigin(req)}/markets/${created.market}`,
+    });
 
     // The indexer may not have seen it yet; the view reports `indexed: false`
     // and the UI shows it as pending rather than inventing prices.

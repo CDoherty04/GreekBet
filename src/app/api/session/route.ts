@@ -6,14 +6,22 @@
  * sponsors:
  *   1. World Selfie Check  → proof of personhood (`verifySelfie`)
  *   2. Privy               → embedded wallet (`createWallet`)
+ *
+ * The phone must already have passed OTP (`/api/verify/check`).
  */
 
 import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { newId } from "@/lib/ids";
-import { getCurrentUser, SESSION_COOKIE, sessionCookieOptions } from "@/lib/session";
+import {
+  attachSessionCookie,
+  clearSessionCookie,
+  getCurrentUser,
+} from "@/lib/session";
 import { verifySelfie } from "@/lib/integrations/world";
 import { createWallet } from "@/lib/integrations/privy";
+import { normalizePhone, isValidE164 } from "@/lib/phone";
+import { phoneIsVerified } from "@/lib/verify";
 import type { User } from "@/types";
 
 export async function GET() {
@@ -43,15 +51,16 @@ export async function POST(req: Request) {
     return fail("name, phone and selfieDataUrl are required");
   }
 
+  const phone = normalizePhone(body.phone);
+  if (!isValidE164(phone)) return fail("Invalid phone number");
+  if (!phoneIsVerified(phone)) {
+    return fail("Verify your phone first", 403);
+  }
+
   // Returning user with the same phone number → just sign them back in.
-  const existing = db.getUserByPhone(body.phone);
+  const existing = db.getUserByPhone(phone);
   if (existing) {
-    const res = ok({ user: existing });
-    res.headers.append(
-      "Set-Cookie",
-      cookie(SESSION_COOKIE, existing.id),
-    );
-    return res;
+    return attachSessionCookie(ok({ user: existing }), existing.id);
   }
 
   // 1) World Selfie Check — verify a real, unique human.
@@ -69,7 +78,7 @@ export async function POST(req: Request) {
   const user: User = {
     id,
     name: body.name.trim(),
-    phone: body.phone.trim(),
+    phone,
     avatarUrl: body.selfieDataUrl,
     walletAddress: wallet.address,
     worldId: verification.worldId,
@@ -78,25 +87,9 @@ export async function POST(req: Request) {
   };
   db.createUser(user);
 
-  const res = ok({ user });
-  res.headers.append("Set-Cookie", cookie(SESSION_COOKIE, user.id));
-  return res;
+  return attachSessionCookie(ok({ user }), user.id);
 }
 
 export async function DELETE() {
-  const res = ok({ ok: true as const });
-  res.headers.append("Set-Cookie", cookie(SESSION_COOKIE, "", 0));
-  return res;
-}
-
-/** Serialize a Set-Cookie header value. */
-function cookie(name: string, value: string, maxAge = sessionCookieOptions.maxAge) {
-  const parts = [
-    `${name}=${value}`,
-    `Path=${sessionCookieOptions.path}`,
-    `SameSite=Lax`,
-    `HttpOnly`,
-    `Max-Age=${maxAge}`,
-  ];
-  return parts.join("; ");
+  return clearSessionCookie(ok({ ok: true as const }));
 }

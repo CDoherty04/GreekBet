@@ -45,6 +45,10 @@ export interface User {
   walletAddress: string;
   worldId: string;
   verified: boolean;
+  /** Telegram @username, if the user linked their account. */
+  telegramUsername?: string;
+  /** Telegram chat id, used to DM the user from the bot. */
+  telegramChatId?: string;
   createdAt: number;
 }
 

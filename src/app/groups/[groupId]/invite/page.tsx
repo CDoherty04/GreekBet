@@ -8,17 +8,19 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 import { useRequireUser } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 import type { Group, User } from "@/types";
 
 export default function GroupInvitePage() {
   const { groupId } = useParams<{ groupId: string }>();
-  const { user, loading } = useRequireUser();
+  const { user, loading, setUser } = useRequireUser();
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<User[]>([]);
   const [copied, setCopied] = useState(false);
   const [removing, setRemoving] = useState<string | null>(null);
+  const [linking, setLinking] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -45,6 +47,29 @@ export default function GroupInvitePage() {
       }
     } catch {
       /* user cancelled share */
+    }
+  }
+
+  async function enableTelegram() {
+    setLinking(true);
+    setError(null);
+    try {
+      const link = await api.linkTelegram();
+      if (link.deepLink) {
+        window.open(link.deepLink, "_blank", "noopener,noreferrer");
+      }
+      const synced = await api.syncTelegram();
+      if (synced.matched && user) {
+        setUser({ ...user, telegramChatId: synced.telegramChatId ?? user.telegramChatId });
+      } else if (link.deepLink) {
+        setError("Tap Start in Telegram, then hit Enable again.");
+      } else {
+        setError("Telegram bot is not configured.");
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not link Telegram");
+    } finally {
+      setLinking(false);
     }
   }
 
@@ -103,6 +128,20 @@ export default function GroupInvitePage() {
         }
       />
       <div className="flex-1 space-y-3 overflow-y-auto p-4 no-scrollbar">
+        {!user.telegramChatId && (
+          <Card className="space-y-3">
+            <p className="text-sm text-muted">
+              Get a Telegram ping when someone posts an event.
+            </p>
+            <Button
+              variant="secondary"
+              loading={linking}
+              onClick={() => void enableTelegram()}
+            >
+              Enable notifications
+            </Button>
+          </Card>
+        )}
         <p className="label-hud">Members · {members.length}</p>
         {members.map((m) => (
           <Card key={m.id} className="flex items-center gap-3 py-3">

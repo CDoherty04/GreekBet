@@ -18,6 +18,7 @@
 
 import type { Group, ID, Market, User } from "@/types";
 import { seedDemoData } from "@/lib/db/seed";
+import { normalizePhone } from "@/lib/phone";
 
 interface Store {
   users: Map<ID, User>;
@@ -49,7 +50,10 @@ export const db = {
     return store.users.get(id);
   },
   getUserByPhone(phone: string): User | undefined {
-    return [...store.users.values()].find((u) => u.phone === phone);
+    const needle = normalizePhone(phone);
+    return [...store.users.values()].find(
+      (u) => normalizePhone(u.phone) === needle,
+    );
   },
   /** Reverse lookup, so on-chain trades can be shown with a name and face. */
   getUserByWallet(walletAddress: string): User | undefined {

@@ -35,6 +35,57 @@ export const api = {
 
   signOut: () => request<{ ok: true }>("/api/session", { method: "DELETE" }),
 
+  sendVerification: (phone: string) =>
+    request<{
+      phone: string;
+      channel: "telegram" | "stub";
+      expiresIn: number;
+      resendIn: number;
+      devCode?: string;
+    }>("/api/verify/send", {
+      method: "POST",
+      body: JSON.stringify({ phone }),
+    }),
+
+  checkVerification: (phone: string, code: string) =>
+    request<{ ok: true; phone: string; user: User | null }>("/api/verify/check", {
+      method: "POST",
+      body: JSON.stringify({ phone, code }),
+    }),
+
+  sendTelegram: (text: string, phone: string) =>
+    request<{ ok: true; phone: string; chatId: string }>("/api/telegram/send", {
+      method: "POST",
+      body: JSON.stringify({ text, phone }),
+    }),
+
+  linkTelegram: (username?: string) =>
+    request<{
+      linked: boolean;
+      username?: string;
+      botUsername: string | null;
+      deepLink: string | null;
+      code: string | null;
+    }>("/api/telegram/link", {
+      method: "POST",
+      body: JSON.stringify({ username }),
+    }),
+
+  syncTelegram: () =>
+    request<{
+      matched: boolean;
+      linked: number;
+      telegramChatId: string | null;
+      telegramUsername: string | null;
+    }>("/api/telegram/sync", { method: "POST" }),
+
+  debugStatus: () =>
+    request<{
+      telegramBot: boolean;
+      telegramGateway: boolean;
+      linkedChatId: boolean;
+    }>("/api/debug/status"),
+
   // ---- Groups ----------------------------------------------------------
   listGroups: () => request<{ groups: Group[] }>("/api/groups"),
 

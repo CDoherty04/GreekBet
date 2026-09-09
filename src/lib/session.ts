@@ -30,3 +30,26 @@ export const sessionCookieOptions = {
   path: "/",
   maxAge: 60 * 60 * 24 * 30, // 30 days
 };
+
+function cookieHeader(value: string, maxAge: number): string {
+  return [
+    `${SESSION_COOKIE}=${value}`,
+    `Path=${sessionCookieOptions.path}`,
+    `SameSite=Lax`,
+    `HttpOnly`,
+    `Max-Age=${maxAge}`,
+  ].join("; ");
+}
+
+export function attachSessionCookie(res: Response, userId: string): Response {
+  res.headers.append(
+    "Set-Cookie",
+    cookieHeader(userId, sessionCookieOptions.maxAge),
+  );
+  return res;
+}
+
+export function clearSessionCookie(res: Response): Response {
+  res.headers.append("Set-Cookie", cookieHeader("", 0));
+  return res;
+}
