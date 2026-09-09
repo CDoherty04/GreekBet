@@ -1,0 +1,20 @@
+# The repo has core.autocrlf=true. Without this, a fresh Windows clone hands
+# out CRLF shell scripts and bash fails with `$'\r': command not found` the
+# moment anyone runs scripts/bootstrap-wsl.sh under WSL. Found by T00.
+*.sh text eol=lf
+
+# Same reasoning for anything else consumed by Linux tooling.
+Makefile text eol=lf
+*.mk      text eol=lf
+
+# Golden vectors are compared byte-for-byte by the conformance suite and are
+# regenerated with `python reference/gen_vectors.py --check`. Line-ending
+# rewriting would make that check fail on Windows.
+reference/vectors/*.json -text
+
+# Rust, TypeScript, and docs are fine either way; keep them normalized in the
+# repo and let Git hand out the platform's native endings in the worktree.
+*.rs  text
+*.ts  text
+*.toml text
+*.md  text

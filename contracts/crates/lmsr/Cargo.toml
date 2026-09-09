@@ -1,0 +1,36 @@
+[package]
+name = "lmsr"
+version = "0.1.0"
+edition = "2021"
+description = "Fixed-point (Q64.64) LMSR market-maker core. No Solana/Anchor dependencies."
+license = "MIT"
+publish = false
+
+[lib]
+name = "lmsr"
+path = "src/lib.rs"
+
+# Deliberately dependency-free: the crate must build for the Solana SBF target
+# and stay unit-testable with a plain `cargo test`. See docs/tickets/T02.
+[dependencies]
+
+# Test-only. `proptest` drives `tests/properties.rs`; it never reaches the
+# library, so the crate stays dependency-free for the SBF build. `std` only.
+[dev-dependencies]
+proptest = "1"
+
+# A plain `main`, not a `#[bench]`: the built-in bench harness is nightly-only
+# and this crate takes no dev-dependency on `criterion`. Prints native timings
+# next to the on-chain compute-unit figures measured by
+# `benches/solana_cu_probe/`. See T04.
+[[bench]]
+name = "compute_units"
+path = "benches/compute_units.rs"
+harness = false
+
+# NOTE: `overflow-checks = true` now lives in the workspace root `Cargo.toml`.
+# Cargo ignores `[profile.*]` declared by a non-root package and warns about it,
+# so keeping a copy here would be misleading — it would look like protection
+# that is not actually applied. The root re-declares it deliberately; removing
+# it there would turn an overflow this crate is written to *catch* into a silent
+# wrap in deployed code.
