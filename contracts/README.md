@@ -60,6 +60,18 @@ program id than the committed `declare_id!`. Run `anchor keys sync`, check that
 it updated **both** `[programs.localnet]` and `[programs.devnet]` in
 `Anchor.toml` (it only rewrites the configured cluster), then rebuild.
 
+> ⚠️ **The deployed program's keypair exists on one machine only**, in
+> `$CARGO_TARGET_DIR/deploy/greekbet-keypair.json` and
+> `~/.greekbet-devnet/keypair-backups/`. It is the identity of the live devnet
+> program and is deliberately not committed. **Lose it and the deployment cannot
+> be upgraded** — a rebuild mints a new id and orphans what is on chain. Back it
+> up somewhere off this machine.
+>
+> This has already bitten once: a regenerated keypair silently replaced the real
+> one, so the id in `deploy/` no longer matched `declare_id!`. Deploying would
+> have put the program at an address it rejects and burned ~1.67 SOL.
+> `scripts/devnet/deploy.sh` now refuses to run on a mismatch.
+
 **Two flags that are not optional.** Anchor 1.2.0 defaults to sbpf v3, which
 Agave 3.1.10 cannot load — plain `anchor build` produces an artifact that fails
 with `invalid file header` on deploy and `Unsupported program id` at the
@@ -127,17 +139,32 @@ The alternative drains the vault over many trades, so it is property-tested.
 
 ## Status
 
-Phase complete except devnet. Against the exit criteria in
+**Phase complete.** Against the exit criteria in
 [`docs/LMSR_ANCHOR_BUILD_PLAN.md`](docs/LMSR_ANCHOR_BUILD_PLAN.md) §4.3:
 
 | | |
 |---|---|
 | LMSR module passes its full suite | **met** |
 | All instructions pass local-validator lifecycle tests | **met** — 44 passing |
-| Same lifecycle run once on devnet with real USDC | **not met** — ticket T10 |
-| Resolver access control verified | **met** locally; devnet re-check in T10 |
+| Same lifecycle run once on devnet with real USDC | **met** — real Circle USDC, signatures in `docs/DEVNET.md` |
+| Resolver access control verified | **met** — locally and on devnet |
 
-Work is tracked as 11 tickets in [`docs/tickets/`](docs/tickets/).
+One ambition from plan §3 is **not** met and cannot be: seeding a wallet with
+devnet USDC needs a manual faucet drip, so the devnet pass is not fully
+unattended. Circle's faucet is reCAPTCHA v3 gated (threshold 0.7), which no
+script can satisfy, and its REST route needs a Circle developer key. Everything
+after the drip is scripted.
+
+Work is tracked as 11 tickets in [`docs/tickets/`](docs/tickets/), all complete.
+[`docs/STATUS.md`](docs/STATUS.md) assesses each exit criterion against
+evidence, and [`docs/DEVNET.md`](docs/DEVNET.md) records the deployed program
+id, the transaction signatures for the devnet lifecycle run, and how devnet
+behaved differently from the local validator.
+
+The program is live on devnet at
+[`GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ`](https://explorer.solana.com/address/GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ?cluster=devnet),
+with a full create → trade → close → resolve → redeem lifecycle settled in real
+Circle devnet USDC.
 
 ## Integrating with the app
 
