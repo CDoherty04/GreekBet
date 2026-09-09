@@ -1,0 +1,116 @@
+"use client";
+
+/**
+ * Onboarding — the whole account is created from a selfie + phone number.
+ * Behind the scenes this triggers World Selfie Check (verification) and
+ * Privy (wallet), but the user just takes a photo and types their number.
+ */
+
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { PhotoCapture } from "@/components/PhotoCapture";
+import { Button } from "@/components/ui/Button";
+import { TextField } from "@/components/ui/TextField";
+import { useSession } from "@/components/SessionProvider";
+import { api } from "@/lib/api";
+
+type Step = "selfie" | "details";
+
+export default function OnboardingPage() {
+  const router = useRouter();
+  const { user, loading, setUser } = useSession();
+  const [step, setStep] = useState<Step>("details");
+  const [selfie, setSelfie] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [phone, setPhone] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  // Already signed in? Skip straight to the app.
+  useEffect(() => {
+    if (!loading && user) router.replace("/groups");
+  }, [loading, user, router]);
+
+  async function submit() {
+    if (!selfie || !name.trim() || !phone.trim()) return;
+    setSubmitting(true);
+    setError(null);
+    try {
+      const { user } = await api.signUp({
+        name,
+        phone,
+        selfieDataUrl: selfie,
+      });
+      setUser(user);
+      router.replace("/groups");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Something went wrong");
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <div className="flex flex-1 flex-col px-6 py-8">
+        <div className="mb-8 text-center">
+          <h1 className="font-display text-4xl font-extrabold uppercase leading-none tracking-tight">
+            Welcome to Groupbet
+          </h1>
+        </div>
+
+      {step === "details" ? (
+        <div className="flex flex-1 flex-col gap-4">
+          <TextField
+            label="Your name"
+            name="name"
+            placeholder="Alex"
+            value={name}
+            autoComplete="name"
+            onChange={(e) => setName(e.target.value)}
+          />
+          <TextField
+            label="Phone number"
+            name="phone"
+            type="tel"
+            placeholder="+1 555 123 4567"
+            value={phone}
+            autoComplete="tel"
+            hint="We'll text you when there's a new event to bet on."
+            onChange={(e) => setPhone(e.target.value)}
+          />
+          <div className="mt-auto pt-6">
+            <Button
+              disabled={!name.trim() || !phone.trim()}
+              onClick={() => setStep("selfie")}
+            >
+              Continue
+            </Button>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-1 flex-col">
+          <p className="mb-4 text-center text-sm text-muted">
+            We use this photo to verify events relevant to you
+          </p>
+          <PhotoCapture
+            facingMode="user"
+            captureLabel="Take selfie"
+            onCapture={setSelfie}
+          />
+          {error && <p className="text-sm text-no">{error}</p>}
+          <div className="mt-auto space-y-2 pt-6">
+            <Button
+              loading={submitting}
+              disabled={!selfie}
+              onClick={submit}
+            >
+              Create account
+            </Button>
+            <Button variant="ghost" onClick={() => setStep("details")}>
+              Back
+            </Button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
