@@ -64,6 +64,11 @@ export const api = {
       method: "POST",
     }),
 
+  removeMember: (groupId: string, userId: string) =>
+    request<{ ok: true }>(`/api/groups/${groupId}/members/${userId}`, {
+      method: "DELETE",
+    }),
+
   // ---- Markets ---------------------------------------------------------
   listMarkets: (groupId: string) =>
     request<{ markets: MarketView[] }>(`/api/groups/${groupId}/markets`),
@@ -79,6 +84,18 @@ export const api = {
 
   getMarket: (marketId: string) =>
     request<{ market: MarketView }>(`/api/markets/${marketId}`),
+
+  updateMarket: (
+    marketId: string,
+    input: { pinned?: boolean; archived?: boolean },
+  ) =>
+    request<{ market: MarketView }>(`/api/markets/${marketId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+
+  deleteMarket: (marketId: string) =>
+    request<{ ok: true }>(`/api/markets/${marketId}`, { method: "DELETE" }),
 
   placeBet: (marketId: string, input: { side: Side; amount: number }) =>
     request<{ market: MarketView; balance: number }>(

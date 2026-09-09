@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Owner resolution flow:
- *   1. Take a photo
+ * Resolution flow:
+ *   1. Any member takes a photo
  *   2. AI predicts yes/no + confidence (advisory only)
  *   3. Owner confirms the outcome (the human vote — later a 3/4 majority)
  */
@@ -78,22 +78,6 @@ export default function ResolveMarketPage() {
     }
   }
 
-  if (!isOwner) {
-    return (
-      <div className="flex flex-1 flex-col">
-        <TopBar title="Resolve" back />
-        <div className="flex flex-1 flex-col justify-center gap-3 p-6">
-          <p className="font-display text-2xl font-extrabold uppercase">
-            Owner only
-          </p>
-          <p className="text-sm text-muted">
-            Only the group owner can resolve this event.
-          </p>
-        </div>
-      </div>
-    );
-  }
-
   return (
     <div className="flex flex-1 flex-col">
       <TopBar title="Resolve" back />
@@ -104,6 +88,7 @@ export default function ResolveMarketPage() {
           <VoteView
             market={market}
             photo={photo ?? market.resolutionImageUrl!}
+            isOwner={isOwner}
             confirming={confirming}
             error={error}
             onConfirm={confirm}
@@ -120,8 +105,9 @@ export default function ResolveMarketPage() {
         ) : (
           <>
             <p className="text-sm text-muted">
-              Take a photo of the outcome. AI will suggest yes or no — you
-              confirm the result.
+              {isOwner
+                ? "Take a photo of the outcome. AI will suggest yes or no — you confirm the result."
+                : "Take a photo of the outcome. The owner will confirm yes or no."}
             </p>
             <PhotoCapture
               facingMode="environment"
@@ -135,7 +121,7 @@ export default function ResolveMarketPage() {
                 disabled={!photo}
                 onClick={analyze}
               >
-                {analyzing ? "Analyzing…" : "Analyze photo"}
+                {analyzing ? "Analyzing…" : "Submit photo"}
               </Button>
             </div>
           </>
@@ -148,6 +134,7 @@ export default function ResolveMarketPage() {
 function VoteView({
   market,
   photo,
+  isOwner,
   confirming,
   error,
   onConfirm,
@@ -155,6 +142,7 @@ function VoteView({
 }: {
   market: MarketView;
   photo: string;
+  isOwner: boolean;
   confirming: Side | null;
   error: string | null;
   onConfirm: (outcome: Side) => void;
@@ -195,28 +183,36 @@ function VoteView({
           <p className="text-sm text-muted">“{market.resolutionNote}”</p>
         )}
         <p className="text-xs text-muted">
-          Advisory only. You decide the official result.
+          {isOwner
+            ? "Advisory only. You decide the official result."
+            : "Waiting for the owner to confirm yes or no."}
         </p>
       </Card>
       {error && <p className="text-sm text-no">{error}</p>}
-      <div className="mt-auto grid grid-cols-2 gap-3">
-        <Button
-          variant="yes"
-          loading={confirming === "yes"}
-          disabled={confirming !== null}
-          onClick={() => onConfirm("yes")}
-        >
-          Yes
-        </Button>
-        <Button
-          variant="no"
-          loading={confirming === "no"}
-          disabled={confirming !== null}
-          onClick={() => onConfirm("no")}
-        >
-          No
-        </Button>
-      </div>
+      {isOwner ? (
+        <div className="mt-auto grid grid-cols-2 gap-3">
+          <Button
+            variant="yes"
+            loading={confirming === "yes"}
+            disabled={confirming !== null}
+            onClick={() => onConfirm("yes")}
+          >
+            Yes
+          </Button>
+          <Button
+            variant="no"
+            loading={confirming === "no"}
+            disabled={confirming !== null}
+            onClick={() => onConfirm("no")}
+          >
+            No
+          </Button>
+        </div>
+      ) : (
+        <p className="mt-auto text-center text-sm text-muted">
+          Only the owner can lock in the result.
+        </p>
+      )}
       <Button variant="ghost" disabled={confirming !== null} onClick={onRetake}>
         Retake photo
       </Button>

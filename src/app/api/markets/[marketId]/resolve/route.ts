@@ -1,5 +1,5 @@
 /**
- * /api/markets/[marketId]/resolve — owner submits a photo for AI analysis.
+ * /api/markets/[marketId]/resolve — any member submits a photo for AI analysis.
  *
  * Does not settle. Stores the photo + AI prediction so the owner can confirm
  * yes/no (the human voting layer; later this can be a 3/4 member majority).
@@ -30,9 +30,6 @@ export async function POST(
   const group = db.getGroup(market.groupId);
   if (!group?.memberIds.includes(user.id)) {
     return fail("Market not found", 404);
-  }
-  if (group.ownerId !== user.id) {
-    return fail("Only the group owner can resolve this event", 403);
   }
   if (market.status === "resolved") {
     return fail("Market is already resolved", 409);

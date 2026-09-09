@@ -7,13 +7,14 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
-import { useParams } from "next/navigation";
+import { useParams, useRouter } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { BalancePill } from "@/components/BalancePill";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { OddsBar } from "@/components/OddsBar";
 import { Countdown, useNow } from "@/components/Countdown";
+import { OwnerEventActions } from "@/components/MarketCard";
 import { useRequireUser } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 import { formatProb } from "@/lib/markets";
@@ -21,11 +22,13 @@ import type { MarketView, Side } from "@/types";
 
 export default function MarketDetailPage() {
   const { marketId } = useParams<{ marketId: string }>();
+  const router = useRouter();
   const { user, loading, setUser } = useRequireUser();
   const [market, setMarket] = useState<MarketView | null>(null);
   const [side, setSide] = useState<Side>("yes");
   const [amount, setAmount] = useState("25");
   const [placing, setPlacing] = useState(false);
+  const [acting, setActing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const now = useNow();
 
@@ -54,6 +57,33 @@ export default function MarketDetailPage() {
     }
   }
 
+  async function patchMarket(input: { pinned?: boolean; archived?: boolean }) {
+    setActing(true);
+    setError(null);
+    try {
+      const res = await api.updateMarket(marketId, input);
+      setMarket(res.market);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not update event");
+    } finally {
+      setActing(false);
+    }
+  }
+
+  async function deleteEvent() {
+    if (!market) return;
+    if (!window.confirm(`Delete “${market.title}”? This can’t be undone.`)) return;
+    setActing(true);
+    setError(null);
+    try {
+      await api.deleteMarket(marketId);
+      router.push(`/groups/${market.groupId}`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not delete event");
+      setActing(false);
+    }
+  }
+
   if (loading || !user || !market) return <Splash />;
 
   const live = market.status === "open" && market.expiresAt > now;
@@ -79,8 +109,31 @@ export default function MarketDetailPage() {
           <h1 className="font-display text-2xl font-extrabold uppercase leading-tight tracking-wide">
             {market.title}
           </h1>
+          {(market.pinned || market.archived) && (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {market.pinned && (
+                <span className="rounded-md border border-brand/40 bg-brand/15 px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-brand">
+                  PINNED
+                </span>
+              )}
+              {market.archived && (
+                <span className="rounded-md border border-border bg-surface-2 px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-muted">
+                  ARCHIVED
+                </span>
+              )}
+            </div>
+          )}
           {market.description && (
             <p className="mt-1 text-sm text-muted">{market.description}</p>
+          )}
+          {isOwner && (
+            <OwnerEventActions
+              market={market}
+              busy={acting}
+              onPin={() => void patchMarket({ pinned: !market.pinned })}
+              onArchive={() => void patchMarket({ archived: !market.archived })}
+              onDelete={() => void deleteEvent()}
+            />
           )}
         </div>
 
@@ -96,27 +149,35 @@ export default function MarketDetailPage() {
 
         {market.status === "resolved" ? (
           <ResolvedPanel market={market} myPayout={myPayout} />
-        ) : isOwner && live ? (
-          <Card className="text-sm text-muted">
-            You&apos;re the group owner — you referee this event and can&apos;t
-            bet.
-          </Card>
-        ) : live ? (
-          <BetPanel
-            side={side}
-            setSide={setSide}
-            amount={amount}
-            setAmount={setAmount}
-            balance={user.balance}
-            placing={placing}
-            onPlace={placeBet}
-            yesProb={market.pool.yesProb}
-          />
-        ) : !isOwner ? (
-          <Card className="text-sm text-muted">
-            Betting is closed. Waiting for the owner to resolve.
-          </Card>
-        ) : null}
+        ) : (
+          <>
+            {market.resolutionImageUrl && (
+              <PendingResolution market={market} />
+            )}
+            {isOwner && live ? (
+              <Card className="text-sm text-muted">
+                You&apos;re the group owner — you referee this event and
+                can&apos;t bet.
+              </Card>
+            ) : live ? (
+              <BetPanel
+                side={side}
+                setSide={setSide}
+                amount={amount}
+                setAmount={setAmount}
+                balance={user.balance}
+                placing={placing}
+                onPlace={placeBet}
+                yesProb={market.pool.yesProb}
+              />
+            ) : !isOwner && !market.resolutionImageUrl ? (
+              <Card className="text-sm text-muted">
+                Betting is closed. Submit a photo, then the owner will confirm
+                the result.
+              </Card>
+            ) : null}
+          </>
+        )}
 
         {error && <p className="text-sm text-no">{error}</p>}
 
@@ -158,11 +219,15 @@ export default function MarketDetailPage() {
         )}
       </div>
 
-      {market.status !== "resolved" && isOwner && (
+      {market.status !== "resolved" && (
         <div className="border-t border-border p-4">
           <Link href={`/markets/${marketId}/resolve`}>
             <Button variant={live ? "secondary" : "primary"}>
-              {market.aiPrediction ? "Confirm result" : "Resolve with photo"}
+              {market.aiPrediction
+                ? isOwner
+                  ? "Confirm result"
+                  : "View photo"
+                : "Submit photo"}
             </Button>
           </Link>
         </div>
@@ -265,6 +330,48 @@ function BetPanel({
       >
         Bet {parsed ?? 0} on {side.toUpperCase()}
       </Button>
+    </Card>
+  );
+}
+
+function PendingResolution({ market }: { market: MarketView }) {
+  const predicted = market.aiPrediction;
+  const confidence = Math.round((market.aiConfidence ?? 0) * 100);
+  return (
+    <Card className="space-y-3">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={market.resolutionImageUrl}
+        alt="Resolution photo"
+        className="w-full rounded-xl object-cover"
+      />
+      {predicted && (
+        <>
+          <p className="label-hud">AI prediction</p>
+          <div className="flex items-center justify-between">
+            <span
+              className={[
+                "font-display text-2xl font-extrabold tracking-wide",
+                predicted === "yes" ? "text-yes" : "text-no",
+              ].join(" ")}
+            >
+              {predicted.toUpperCase()}
+            </span>
+            <span className="font-display text-sm font-bold tabular-nums text-muted">
+              {confidence}% confidence
+            </span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-surface-2">
+            <div
+              className={predicted === "yes" ? "h-full bg-yes" : "h-full bg-no"}
+              style={{ width: `${confidence}%` }}
+            />
+          </div>
+        </>
+      )}
+      {market.resolutionNote && (
+        <p className="text-sm text-muted">“{market.resolutionNote}”</p>
+      )}
     </Card>
   );
 }

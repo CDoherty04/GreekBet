@@ -28,7 +28,10 @@ export async function GET(
     .map((id) => db.getUser(id))
     .filter((u): u is User => Boolean(u));
 
-  const markets = db.listMarketsForGroup(groupId).map(toMarketView);
+  const markets = db
+    .listMarketsForGroup(groupId)
+    .filter((m) => !m.archived)
+    .map(toMarketView);
 
   if (!isMember) {
     const publicMembers = members.map((u) => ({

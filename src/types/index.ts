@@ -70,6 +70,10 @@ export interface Market {
   aiPrediction?: Side;
   /** 0..1 confidence from the AI resolver. */
   aiConfidence?: number;
+  /** Owner-pinned: sorts to the top of the group feed. */
+  pinned?: boolean;
+  /** Owner-archived: hidden from the main feed (resolved events). */
+  archived?: boolean;
 }
 
 /** A stake placed by a user on one side of a market. */

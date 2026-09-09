@@ -7,7 +7,21 @@ import { Countdown, useNow } from "@/components/Countdown";
 import type { MarketView } from "@/types";
 
 /** Summary card for a market in a group's list. */
-export function MarketCard({ market }: { market: MarketView }) {
+export function MarketCard({
+  market,
+  isOwner,
+  busy,
+  onPin,
+  onArchive,
+  onDelete,
+}: {
+  market: MarketView;
+  isOwner?: boolean;
+  busy?: boolean;
+  onPin?: () => void;
+  onArchive?: () => void;
+  onDelete?: () => void;
+}) {
   const now = useNow();
   const live = market.status === "open" && market.expiresAt > now;
 
@@ -18,41 +32,113 @@ export function MarketCard({ market }: { market: MarketView }) {
         : "border-no/35 bg-no/10"
       : "hover:border-brand/50";
   return (
-    <Link href={`/markets/${market.id}`} className="block">
-      <Card className={`transition ${resolvedTint}`}>
-        <div className="mb-3 grid grid-cols-[1fr_auto_1fr] items-start gap-2">
-          <h3 className="min-w-0 font-display text-lg font-bold leading-snug tracking-wide">
-            {market.title}
-          </h3>
-          <span className="pt-0.5 text-center font-display text-xs font-bold tabular-nums tracking-wider text-brand">
-            {market.status !== "resolved" && (
-              <Countdown expiresAt={market.expiresAt} />
-            )}
-          </span>
-          <div className="justify-self-end">
-            {live && (
-              <span className="shrink-0 rounded-md bg-brand px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-white">
-                LIVE
-              </span>
-            )}
+    <div>
+      <Link href={`/markets/${market.id}`} className="block">
+        <Card className={`transition ${resolvedTint} ${market.archived ? "opacity-70" : ""}`}>
+          <div className="mb-3 grid grid-cols-[1fr_auto_1fr] items-start gap-2">
+            <h3 className="min-w-0 font-display text-lg font-bold leading-snug tracking-wide">
+              {market.title}
+            </h3>
+            <span className="pt-0.5 text-center font-display text-xs font-bold tabular-nums tracking-wider text-brand">
+              {market.status !== "resolved" && (
+                <Countdown expiresAt={market.expiresAt} />
+              )}
+            </span>
+            <div className="flex flex-col items-end gap-1 justify-self-end">
+              {market.pinned && (
+                <span className="shrink-0 rounded-md border border-brand/40 bg-brand/15 px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-brand">
+                  PINNED
+                </span>
+              )}
+              {live && (
+                <span className="shrink-0 rounded-md bg-brand px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-white">
+                  LIVE
+                </span>
+              )}
+            </div>
           </div>
-        </div>
-        {market.status === "resolved" && market.resolutionImageUrl && (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img
-            src={market.resolutionImageUrl}
-            alt=""
-            className="mb-3 h-28 w-full rounded-xl object-cover"
-          />
-        )}
-        <OddsBar pool={market.pool} />
-        <div className="mt-3 flex items-center justify-between text-xs text-muted">
-          <span>{market.pool.total.toLocaleString()} in the pool</span>
-          <span>
-            {market.bets.length} bet{market.bets.length === 1 ? "" : "s"}
-          </span>
-        </div>
-      </Card>
-    </Link>
+          {market.status === "resolved" && market.resolutionImageUrl && (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={market.resolutionImageUrl}
+              alt=""
+              className="mb-3 h-28 w-full rounded-xl object-cover"
+            />
+          )}
+          <OddsBar pool={market.pool} />
+          <div className="mt-3 flex items-center justify-between text-xs text-muted">
+            <span>{market.pool.total.toLocaleString()} in the pool</span>
+            <span>
+              {market.bets.length} bet{market.bets.length === 1 ? "" : "s"}
+            </span>
+          </div>
+        </Card>
+      </Link>
+      {isOwner && onPin && onArchive && onDelete && (
+        <OwnerEventActions
+          market={market}
+          busy={busy}
+          onPin={onPin}
+          onArchive={onArchive}
+          onDelete={onDelete}
+        />
+      )}
+    </div>
+  );
+}
+
+export function OwnerEventActions({
+  market,
+  busy,
+  onPin,
+  onArchive,
+  onDelete,
+}: {
+  market: MarketView;
+  busy?: boolean;
+  onPin: () => void;
+  onArchive: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 px-1">
+      <ActionButton disabled={busy} onClick={onPin}>
+        {market.pinned ? "Unpin" : "Pin"}
+      </ActionButton>
+      {market.status === "resolved" && (
+        <ActionButton disabled={busy} onClick={onArchive}>
+          {market.archived ? "Unarchive" : "Archive"}
+        </ActionButton>
+      )}
+      <ActionButton danger disabled={busy} onClick={onDelete}>
+        Delete
+      </ActionButton>
+    </div>
+  );
+}
+
+function ActionButton({
+  children,
+  onClick,
+  disabled,
+  danger,
+}: {
+  children: React.ReactNode;
+  onClick: () => void;
+  disabled?: boolean;
+  danger?: boolean;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className={[
+        "font-display text-[11px] font-bold tracking-[0.16em] uppercase disabled:opacity-40",
+        danger ? "text-no hover:text-no/80" : "text-muted hover:text-brand",
+      ].join(" ")}
+    >
+      {children}
+    </button>
   );
 }

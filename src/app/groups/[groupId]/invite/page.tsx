@@ -18,6 +18,7 @@ export default function GroupInvitePage() {
   const [group, setGroup] = useState<Group | null>(null);
   const [members, setMembers] = useState<User[]>([]);
   const [copied, setCopied] = useState(false);
+  const [removing, setRemoving] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -44,6 +45,20 @@ export default function GroupInvitePage() {
       }
     } catch {
       /* user cancelled share */
+    }
+  }
+
+  async function removeMember(member: User) {
+    if (!window.confirm(`Remove ${member.name} from this group?`)) return;
+    setRemoving(member.id);
+    setError(null);
+    try {
+      await api.removeMember(groupId, member.id);
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not remove member");
+    } finally {
+      setRemoving(null);
     }
   }
 
@@ -92,11 +107,21 @@ export default function GroupInvitePage() {
         {members.map((m) => (
           <Card key={m.id} className="flex items-center gap-3 py-3">
             <MemberAvatar user={m} />
-            <p className="truncate font-display text-base font-bold uppercase tracking-wide">
+            <p className="min-w-0 flex-1 truncate font-display text-base font-bold uppercase tracking-wide">
               {m.name}
               {m.id === group.ownerId ? " · owner" : ""}
               {m.id === user.id ? " · you" : ""}
             </p>
+            {user.id === group.ownerId && m.id !== group.ownerId && (
+              <button
+                type="button"
+                disabled={removing === m.id}
+                onClick={() => void removeMember(m)}
+                className="shrink-0 font-display text-[11px] font-bold tracking-[0.16em] uppercase text-no disabled:opacity-40"
+              >
+                {removing === m.id ? "…" : "Remove"}
+              </button>
+            )}
           </Card>
         ))}
         {error && <p className="text-sm text-no">{error}</p>}

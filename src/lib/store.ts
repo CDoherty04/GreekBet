@@ -89,6 +89,12 @@ export const db = {
     if (!group.memberIds.includes(userId)) group.memberIds.push(userId);
     return group;
   },
+  removeMember(groupId: ID, userId: ID): Group | undefined {
+    const group = store.groups.get(groupId);
+    if (!group) return undefined;
+    group.memberIds = group.memberIds.filter((id) => id !== userId);
+    return group;
+  },
 
   // ---- Markets ---------------------------------------------------------
   getMarket(id: ID): Market | undefined {
@@ -97,7 +103,10 @@ export const db = {
   listMarketsForGroup(groupId: ID): Market[] {
     return [...store.markets.values()]
       .filter((m) => m.groupId === groupId)
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort((a, b) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+        return b.createdAt - a.createdAt;
+      });
   },
   createMarket(market: Market): Market {
     store.markets.set(market.id, market);
@@ -109,6 +118,12 @@ export const db = {
     const next = { ...market, ...patch };
     store.markets.set(id, next);
     return next;
+  },
+  deleteMarket(id: ID): boolean {
+    for (const bet of [...store.bets.values()]) {
+      if (bet.marketId === id) store.bets.delete(bet.id);
+    }
+    return store.markets.delete(id);
   },
 
   // ---- Bets ------------------------------------------------------------
