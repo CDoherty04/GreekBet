@@ -33,6 +33,7 @@ export async function GET(
   const chain = projection();
   const markets = db
     .listMarketsForGroup(groupId)
+    .filter((m) => !m.archived)
     .map((m) => toMarketView(m, chain.get(m.address), user.walletAddress));
 
   if (!isMember) {

@@ -166,6 +166,9 @@ export default function MarketDetailPage() {
   }
 
   const live = market.status === "open" && market.expiresAt > now;
+  // The group owner referees: they confirm the result, so they do not trade.
+  // Keeping the referee out of the book is the whole reason that split exists.
+  const isOwner = market.groupOwnerId === user.id;
   const pos = market.myPosition;
   const held = pos
     ? side === "yes"
@@ -223,6 +226,10 @@ export default function MarketDetailPage() {
           </Card>
         )}
 
+        {market.resolutionImageUrl && market.status !== "resolved" && (
+          <PendingResolution market={market} />
+        )}
+
         {market.status === "resolved" ? (
           <ResolvedPanel
             market={market}
@@ -230,6 +237,11 @@ export default function MarketDetailPage() {
             busy={busy}
             onRedeem={submitRedeem}
           />
+        ) : isOwner && live ? (
+          <Card className="text-sm text-muted">
+            You&apos;re the group owner — you referee this event and can&apos;t
+            trade in it.
+          </Card>
         ) : live ? (
           <TradePanel
             side={side}
@@ -529,6 +541,54 @@ function ResolvedPanel({
             : "Close out position"}
         </Button>
       )}
+    </Card>
+  );
+}
+
+/**
+ * The AI has read the photo but nobody has settled anything yet.
+ *
+ * Shown to everyone, deliberately: the reading is public before it becomes
+ * binding, so members can object to the owner before an irreversible on-chain
+ * write. The confidence figure is included for the same reason — a low number
+ * is exactly when a human should look harder.
+ */
+function PendingResolution({ market }: { market: MarketView }) {
+  return (
+    <Card className="space-y-2">
+      <p className="label-hud">Awaiting the owner&apos;s confirmation</p>
+      {market.resolutionImageUrl && (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={market.resolutionImageUrl}
+          alt="Resolution photo"
+          className="w-full rounded-xl object-cover"
+        />
+      )}
+      {market.aiPrediction && (
+        <p className="text-sm">
+          <span className="text-muted">AI reads this as</span>{" "}
+          <span
+            className={
+              market.aiPrediction === "yes" ? "text-yes" : "text-no"
+            }
+          >
+            {market.aiPrediction.toUpperCase()}
+          </span>
+          {market.aiConfidence !== undefined && (
+            <span className="ml-2 text-xs text-muted">
+              {Math.round(market.aiConfidence * 100)}% confident
+            </span>
+          )}
+        </p>
+      )}
+      {market.resolutionNote && (
+        <p className="text-sm text-muted">{market.resolutionNote}</p>
+      )}
+      <p className="text-xs text-muted">
+        Nothing is settled until the group owner confirms. That write goes on
+        chain and cannot be undone.
+      </p>
     </Card>
   );
 }

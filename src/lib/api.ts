@@ -64,6 +64,11 @@ export const api = {
       method: "POST",
     }),
 
+  removeMember: (groupId: string, userId: string) =>
+    request<{ ok: true }>(`/api/groups/${groupId}/members/${userId}`, {
+      method: "DELETE",
+    }),
+
   // ---- Markets ---------------------------------------------------------
   listMarkets: (groupId: string) =>
     request<{ markets: MarketView[] }>(`/api/groups/${groupId}/markets`),
@@ -91,6 +96,25 @@ export const api = {
   /** `marketId` is the market PDA everywhere below. */
   getMarket: (marketId: string) =>
     request<{ market: MarketView }>(`/api/markets/${marketId}`),
+
+  /** Owner-only: pin or archive. Off-chain display state, not chain state. */
+  updateMarket: (
+    marketId: string,
+    input: { pinned?: boolean; archived?: boolean },
+  ) =>
+    request<{ market: MarketView }>(`/api/markets/${marketId}`, {
+      method: "PATCH",
+      body: JSON.stringify(input),
+    }),
+
+  /**
+   * Owner-only: forget a market's metadata.
+   *
+   * Off-chain only — the PDA, its vault and everyone's positions survive, and
+   * holders can still redeem. The route refuses while positions are open.
+   */
+  deleteMarket: (marketId: string) =>
+    request<{ ok: true }>(`/api/markets/${marketId}`, { method: "DELETE" }),
 
   /**
    * What a trade would give, without doing it.
@@ -133,14 +157,26 @@ export const api = {
   resolveMarket: (marketId: string, input: { imageDataUrl: string }) =>
     request<{
       market: MarketView;
-      outcome: Side;
-      description: string;
+      prediction: { outcome: Side; confidence: number; description: string };
       faceMatch: { match: boolean; confidence: number };
       signature: string;
     }>(`/api/markets/${marketId}/resolve`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
+
+  /**
+   * Owner casts the deciding vote, which settles the market **on chain**.
+   *
+   * The AI's reading is advisory; this is the irreversible step. The resolver
+   * authority writes the outcome, and the program has no way to change it
+   * afterwards.
+   */
+  confirmResolution: (marketId: string, outcome: Side) =>
+    request<{ market: MarketView; outcome: Side; signature: string }>(
+      `/api/markets/${marketId}/resolve/confirm`,
+      { method: "POST", body: JSON.stringify({ outcome }) },
+    ),
 
   /** On-chain wallet balances, for the header pill and trade validation. */
   getBalance: () =>

@@ -80,6 +80,29 @@ export interface Market {
   resolutionNote?: string;
   /** Signature of the `create_market` transaction, for explorer links. */
   createSignature?: string;
+
+  /**
+   * The AI's suggested outcome — **advisory only**; the owner confirms.
+   *
+   * That separation matters more now than it did off chain: confirming writes
+   * the outcome with the resolver authority, and the program makes that write
+   * one-way. A confident AI is not reason enough to do it unilaterally.
+   */
+  aiPrediction?: Side;
+  /** 0..1 confidence from the AI resolver. */
+  aiConfidence?: number;
+
+  /** Owner-pinned: sorts to the top of the group feed. */
+  pinned?: boolean;
+  /**
+   * Owner-archived: hidden from the main feed.
+   *
+   * Off-chain only. Archiving hides a market from this app; it cannot touch the
+   * on-chain market, which keeps trading or stays redeemable regardless. The
+   * same is true of deletion — it drops the metadata while the PDA and its
+   * vault live on.
+   */
+  archived?: boolean;
 }
 
 /* ------------------------------------------------------------------ */
@@ -147,4 +170,6 @@ export interface MarketView extends Market {
   myPosition?: Position;
   /** True once the market exists on chain and the indexer has seen it. */
   indexed: boolean;
+  /** Who may pin, archive, delete, and confirm resolution. */
+  groupOwnerId: ID;
 }

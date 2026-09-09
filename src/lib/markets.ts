@@ -70,10 +70,13 @@ export function toMarketView(
       },
       trades: [],
       indexed: false,
+      groupOwnerId:
+        db.getGroup(market.groupId)?.ownerId ?? market.createdBy,
     };
   }
 
   const yesProb = priceToProb(chain.priceYes);
+  const groupOwnerId = db.getGroup(market.groupId)?.ownerId ?? market.createdBy;
   const myPosition: Position | undefined = viewerWallet
     ? toPosition(chain, viewerWallet)
     : undefined;
@@ -96,6 +99,7 @@ export function toMarketView(
     trades: chain.trades.map(toTrade),
     myPosition,
     indexed: true,
+    groupOwnerId,
   };
 }
 

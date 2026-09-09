@@ -92,6 +92,12 @@ export const db = {
     if (!group.memberIds.includes(userId)) group.memberIds.push(userId);
     return group;
   },
+  removeMember(groupId: ID, userId: ID): Group | undefined {
+    const group = store.groups.get(groupId);
+    if (!group) return undefined;
+    group.memberIds = group.memberIds.filter((id) => id !== userId);
+    return group;
+  },
 
   // ---- Market metadata -------------------------------------------------
   getMarket(address: string): Market | undefined {
@@ -100,7 +106,10 @@ export const db = {
   listMarketsForGroup(groupId: ID): Market[] {
     return [...store.markets.values()]
       .filter((m) => m.groupId === groupId)
-      .sort((a, b) => b.createdAt - a.createdAt);
+      .sort((a, b) => {
+        if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
+        return b.createdAt - a.createdAt;
+      });
   },
   createMarket(market: Market): Market {
     store.markets.set(market.address, market);
@@ -112,6 +121,19 @@ export const db = {
     const next = { ...market, ...patch };
     store.markets.set(address, next);
     return next;
+  },
+  /**
+   * Forget a market's metadata.
+   *
+   * **Off-chain only, and worth being clear about.** The on-chain market, its
+   * vault and everyone's positions are untouched — the program has no delete
+   * and collateral cannot be clawed back. This removes the question text and
+   * the group link, so the app stops showing it; holders can still redeem via
+   * the PDA. Deleting one with live positions strands people in the UI, which
+   * is why the route restricts it.
+   */
+  deleteMarket(address: string): boolean {
+    return store.markets.delete(address);
   },
 };
 

@@ -1,23 +1,21 @@
 /**
- * /api/markets/[marketId]/resolve — settle a market from an uploaded photo.
+ * /api/markets/[marketId]/resolve — read a resolution photo with the AI.
  *
- * The headline recipe, chaining sponsors end to end:
+ * The headline recipe, chaining sponsors:
  *   1. World  → face-match the uploader against their signup selfie, so a real,
  *      verified human vouched for the photo.
  *   2. Resolver (Bazantic) → describe → sanitize → decide yes/no.
- *   3. **On-chain settlement** → crank the market closed if needed, then write
- *      the winning outcome with the resolver authority.
  *
- * Step 3 replaces the old parimutuel payout loop. Nothing is credited here:
- * winners hold shares that redeem 1:1 from the market's vault, and they claim
- * them themselves via `/redeem`. The app cannot pay anyone — only the program
- * can move collateral, which is the point of it being non-custodial.
+ * **This step decides nothing.** It records the AI's reading and returns it for
+ * a human to confirm at `/resolve/confirm`, which is what actually settles the
+ * market on chain.
  *
- * The resolver is a bare pubkey the program checks and nothing more, so this
- * pipeline is exactly the "pluggable authority" seam it was designed for.
+ * That separation matters more now than it did off chain. Confirming writes the
+ * outcome with the resolver authority, and the program makes that write one-way
+ * — there is no correction, and winners redeem real collateral against it. An
+ * AI reading a photo is not grounds to do that unilaterally, however confident
+ * it sounds.
  */
-
-import { PublicKey } from "@solana/web3.js";
 
 import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
@@ -25,10 +23,7 @@ import { getCurrentUser } from "@/lib/session";
 import { toMarketView } from "@/lib/markets";
 import { matchFace } from "@/lib/integrations/world";
 import { resolveFromImage } from "@/lib/integrations/resolver";
-import { closeMarket, resolveMarket } from "@/lib/chain/actions";
-import { getChainMarket, projection } from "@/lib/chain/projection";
-import { feePayerKeypair, resolverKeypair } from "@/lib/chain/wallet";
-import { onChainMessage } from "@/app/api/groups/[groupId]/markets/route";
+import { getChainMarket } from "@/lib/chain/projection";
 
 interface ResolveBody {
   imageDataUrl: string;
@@ -63,56 +58,23 @@ export async function POST(
   const faceMatch = await matchFace(user.avatarUrl, body.imageDataUrl);
 
   // 2) Resolver recipe — describe → sanitize → decide.
-  const resolution = await resolveFromImage(meta.title, body.imageDataUrl);
+  const prediction = await resolveFromImage(meta.title, body.imageDataUrl);
 
-  // 3) Settle on chain.
-  try {
-    const market = new PublicKey(marketId);
-    const resolver = resolverKeypair();
-    const payer = feePayerKeypair();
+  // Recorded as a suggestion. Nothing on chain has changed.
+  const updated = db.updateMarket(marketId, {
+    resolutionImageUrl: body.imageDataUrl,
+    resolutionNote: prediction.description,
+    aiPrediction: prediction.outcome,
+    aiConfidence: prediction.confidence,
+  })!;
 
-    // `resolve_market` requires `Closed`, and closing requires `close_time` to
-    // have passed. Cranking here is permissionless by design, so anyone can do
-    // it — but it genuinely cannot be done early, and saying so plainly beats
-    // surfacing the program's raw error.
-    if (chain.status === "open") {
-      if (chain.closeTime * 1000 > Date.now()) {
-        return fail(
-          "This market cannot be resolved until its close time has passed",
-          409,
-        );
-      }
-      await closeMarket({ payer, market });
-    }
-
-    const signature = await resolveMarket({
-      resolver,
-      payer,
-      market,
-      outcome: resolution.outcome,
-    });
-
-    const updated = db.updateMarket(marketId, {
-      resolutionImageUrl: body.imageDataUrl,
-      resolutionNote: resolution.description,
-    })!;
-
-    // Re-read: `resolve` just changed chain state, and the indexer may not have
-    // caught up, so the returned view can still show the market as closed.
-    projection();
-
-    return ok({
-      market: toMarketView(
-        updated,
-        getChainMarket(marketId),
-        user.walletAddress,
-      ),
-      outcome: resolution.outcome,
-      description: resolution.description,
-      faceMatch,
-      signature,
-    });
-  } catch (err) {
-    return fail(onChainMessage(err), 502);
-  }
+  return ok({
+    market: toMarketView(updated, chain, user.walletAddress),
+    prediction: {
+      outcome: prediction.outcome,
+      confidence: prediction.confidence,
+      description: prediction.description,
+    },
+    faceMatch,
+  });
 }

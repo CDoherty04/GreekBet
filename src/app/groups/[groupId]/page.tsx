@@ -12,6 +12,7 @@ import { BalancePill } from "@/components/BalancePill";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { MarketCard } from "@/components/MarketCard";
+import { useNow } from "@/components/Countdown";
 import { useRequireUser } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 import type { Group, MarketView, User } from "@/types";
@@ -25,7 +26,10 @@ export default function GroupDetailPage() {
   const [members, setMembers] = useState<User[]>([]);
   const [markets, setMarkets] = useState<MarketView[] | null>(null);
   const [joining, setJoining] = useState(false);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const now = useNow();
 
   const load = useCallback(async () => {
     const preview = await api.getGroup(groupId);
@@ -59,7 +63,49 @@ export default function GroupDetailPage() {
     }
   }
 
+  async function runOwnerAction(id: string, fn: () => Promise<unknown>) {
+    setBusyId(id);
+    setError(null);
+    try {
+      await fn();
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not update event");
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  // Markets are keyed by their on-chain PDA now, not an internal id.
+  function pinMarket(m: MarketView) {
+    void runOwnerAction(m.address, () =>
+      api.updateMarket(m.address, { pinned: !m.pinned }),
+    );
+  }
+
+  function archiveMarket(m: MarketView) {
+    void runOwnerAction(m.address, () =>
+      api.updateMarket(m.address, { archived: !m.archived }),
+    );
+  }
+
+  function deleteMarket(m: MarketView) {
+    // Worth being precise in the prompt: this forgets the app's copy, it does
+    // not and cannot destroy the on-chain market or anyone's collateral.
+    if (
+      !window.confirm(
+        `Remove “${m.title}” from this group? The on-chain market and everyone’s positions are unaffected.`,
+      )
+    )
+      return;
+    void runOwnerAction(m.address, () => api.deleteMarket(m.address));
+  }
+
   if (loading || !user || !group) return <Splash />;
+
+  const isOwner = group.ownerId === user.id;
+  const active = (markets ?? []).filter((m) => !m.archived);
+  const archived = (markets ?? []).filter((m) => m.archived);
 
   if (!isMember) {
     return (
@@ -128,7 +174,7 @@ export default function GroupDetailPage() {
                           ? "Confirming on chain"
                           : m.status === "resolved"
                             ? "Resolved"
-                            : m.expiresAt > Date.now()
+                            : m.expiresAt > now
                               ? "Live"
                               : "Needs resolution"}{" "}
                         · {m.trades.length} trade
@@ -179,15 +225,60 @@ export default function GroupDetailPage() {
       />
       <div className="flex-1 space-y-3 overflow-y-auto p-4 no-scrollbar">
         <p className="label-hud">Markets</p>
+        {error && <p className="text-sm text-no">{error}</p>}
         {markets === null ? (
           <Splash />
-        ) : markets.length === 0 ? (
+        ) : active.length === 0 ? (
           <Card className="py-10 text-center">
-            <p className="font-display text-lg font-bold uppercase">No events yet</p>
-            <p className="mt-1 text-sm text-muted">Create the first.</p>
+            <p className="font-display text-lg font-bold uppercase">
+              {archived.length > 0 ? "No open events" : "No events yet"}
+            </p>
+            <p className="mt-1 text-sm text-muted">
+              {archived.length > 0
+                ? "Resolved events are in the archive."
+                : "Create the first."}
+            </p>
           </Card>
         ) : (
-          markets.map((m) => <MarketCard key={m.address} market={m} />)
+          active.map((m) => (
+            <MarketCard
+              key={m.address}
+              market={m}
+              isOwner={isOwner}
+              busy={busyId === m.address}
+              onPin={() => pinMarket(m)}
+              onArchive={() => archiveMarket(m)}
+              onDelete={() => deleteMarket(m)}
+            />
+          ))
+        )}
+        {archived.length > 0 && (
+          <div className="pt-4">
+            {active.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setShowArchived((v) => !v)}
+                className="label-hud mb-2"
+              >
+                Archived · {archived.length} {showArchived ? "▾" : "▸"}
+              </button>
+            ) : (
+              <p className="label-hud mb-2">Archived · {archived.length}</p>
+            )}
+            {(showArchived || active.length === 0) &&
+              archived.map((m) => (
+                <div key={m.address} className="mb-3">
+                  <MarketCard
+                    market={m}
+                    isOwner={isOwner}
+                    busy={busyId === m.address}
+                    onPin={() => pinMarket(m)}
+                    onArchive={() => archiveMarket(m)}
+                    onDelete={() => deleteMarket(m)}
+                  />
+                </div>
+              ))}
+          </div>
         )}
       </div>
 
