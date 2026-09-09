@@ -157,11 +157,10 @@ pub struct BuyShares<'info> {
 /// `usdc_amount`; fewer than that and the instruction fails with
 /// [`GreekBetError::SlippageExceeded`] having moved nothing.
 ///
-/// It is declared as `max_slippage` in `lib.rs`'s `#[program]` signature (and
-/// therefore in the IDL) because that file belongs to T05 and this ticket may
-/// not edit it. The name is the only thing that survives from the original
-/// spelling; the meaning is `min_shares_out`. See this ticket's report for the
-/// recommendation to rename it.
+/// The plan originally called this argument `max_slippage`. It is now declared
+/// as `min_shares_out` in `lib.rs`'s `#[program]` signature and exported under
+/// that name in the IDL, so the on-chain name, the handler parameter and the
+/// meaning all agree.
 ///
 /// Why a share-denominated limit rather than a price one:
 ///

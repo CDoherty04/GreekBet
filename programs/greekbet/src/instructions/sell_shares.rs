@@ -126,8 +126,8 @@ pub struct SellShares<'info> {
 /// [`GreekBetError::SlippageExceeded`] having moved nothing.
 ///
 /// This is the same shape as [`buy_shares`](super::buy_shares)'s
-/// `min_shares_out` (which `lib.rs` still spells `max_slippage`): **in both
-/// instructions the limit is the minimum of the thing the caller receives.**
+/// `min_shares_out`: **in both instructions the limit is the minimum of the
+/// thing the caller receives.**
 /// The caller fixes their input exactly and floors their output, so the worst
 /// effective price is `min_usdc_out / share_amount` on this side and
 /// `usdc_amount / min_shares_out` on the other — computable client-side with no

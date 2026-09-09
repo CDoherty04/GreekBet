@@ -70,7 +70,7 @@ pub enum GreekBetError {
 
     // ---- trading ---------------------------------------------------------
     /// A buy or sell would have been worse for the caller than the limit they
-    /// supplied (`max_slippage` / `min_usdc_out`).
+    /// supplied (`min_shares_out` / `min_usdc_out`).
     ///
     /// Enforced on-chain, never delegated to the client (plan §2.3). The
     /// failure must be clean: no state written, no tokens moved.

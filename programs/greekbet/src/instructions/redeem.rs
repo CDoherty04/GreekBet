@@ -75,7 +75,22 @@ pub struct Redeem<'info> {
     ///
     /// This account also supplies the seeds that sign the vault withdrawal, so
     /// it must be a real, program-owned `Market` (which `Account<_, Market>`
-    /// enforces via owner + discriminator).
+    /// enforces via owner + discriminator) sitting at its own canonical PDA
+    /// (which the `seeds`/`bump` constraint enforces).
+    ///
+    /// The seeds constraint is defence in depth rather than a fix: a
+    /// non-canonical `Market` was already unusable here, because the position
+    /// PDA is derived from `market.key()`, the vault is pinned by
+    /// `address = market.vault`, and the signer derived from a forged market
+    /// would not be the vault's authority, so the CPI would fail. T09 observed
+    /// that this instruction was the only one of the six without the
+    /// constraint — safe incidentally rather than by construction. Made
+    /// explicit so the guarantee does not depend on that reasoning surviving a
+    /// future edit.
+    #[account(
+        seeds = [MARKET_SEED, market.creator.as_ref(), market.question_hash.as_ref()],
+        bump = market.bump,
+    )]
     pub market: Account<'info, Market>,
 
     /// The caller's position in this market.

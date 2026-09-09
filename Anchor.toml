@@ -37,7 +37,25 @@ wallet = "~/.config/solana/id.json"
 # surfpool, is not installed. A stale v0 .so in deploy/ makes a broken v3 build
 # look like it passed — wipe deploy/ if results surprise you.
 # See docs/TOOLCHAIN.md §5.
+#
+# Two things in this command line are load-bearing, both from T09:
+#
+# * `NODE_OPTIONS=--no-experimental-strip-types` forces mocha down its
+#   `require()` path so **ts-node** transpiles the suite. Node 24 strips types
+#   natively, and mocha 9 tries `import()` before `require()`, so without this
+#   a spec file is transpiled by whichever loader happens to win - and node's
+#   strip-only mode rejects perfectly ordinary TypeScript (parameter
+#   properties, enums) with a bare SyntaxError. Which loader ran depended on
+#   whether every import in the file resolved as ESM, which is not a property
+#   anyone should have to reason about.
+# * `--ignore tests/utils.ts` keeps the shared fixture module out of the spec
+#   list. It defines helpers and no `describe`, so loading it as a test file
+#   only creates a way for it to fail.
+#
+# The glob is overridable so a single file can be run against the same
+# validator setup:
+#   GB_TESTS='tests/negative.ts' anchor test --skip-build --validator legacy
 [scripts]
-test = "yarn run ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\""
+test = "NODE_OPTIONS=--no-experimental-strip-types yarn run ts-mocha -p ./tsconfig.json -t 1000000 --ignore \"tests/utils.ts\" \"${GB_TESTS:-tests/**/*.ts}\""
 
 [hooks]
