@@ -4,7 +4,7 @@ All Rust and Solana work for this project happens **inside WSL2 Ubuntu**. Native
 Windows Anchor builds are not supported and are not attempted anywhere.
 
 Everything below was installed by [`scripts/bootstrap-wsl.sh`](../scripts/bootstrap-wsl.sh)
-and verified end to end on 2026-09-07 (`anchor init` → `anchor build` →
+and verified end to end on 2026-09-07 (`anchor init` â†’ `anchor build` â†’
 `anchor test`, both the Rust/LiteSVM and the TypeScript/`solana-test-validator`
 paths). Where something did not work, the real workaround is documented rather
 than the intent.
@@ -14,17 +14,17 @@ than the intent.
 ## 0. The five things you must know
 
 1. Reach WSL by **writing a `.sh` file and running it**, not by quoting a command
-   into PowerShell. See [§3](#3-reaching-wsl-from-windows).
+   into PowerShell. See [Â§3](#3-reaching-wsl-from-windows).
 2. `CARGO_TARGET_DIR=$HOME/.cache/greekbet-target` is exported for every shell.
    The repo is on `/mnt/c` (9p); build artifacts must land on ext4.
-   It is honoured by both `cargo` and `anchor`. See [§4](#4-cargo_target_dir).
+   It is honoured by both `cargo` and `anchor`. See [Â§4](#4-cargo_target_dir).
 3. **`anchor build` must be run as `anchor build --arch v0`.** The default
    (`--arch v3`) produces a binary that `solana-test-validator` and
-   `solana program deploy` reject. See [§5](#5-the-arch-v0-rule-mandatory).
+   `solana program deploy` reject. See [Â§5](#5-the-arch-v0-rule-mandatory).
 4. **`anchor test` must be run as `anchor test --validator legacy`.** Anchor
    1.2's default local validator is `surfpool`, which is not installed.
 5. Environment lives in `~/.greekbet-env.sh`, sourced from `~/.profile` **and**
-   `~/.bashrc`. Not from `~/.bashrc` alone — see [§7.2](#72-bashrc-is-dead-for-non-interactive-shells).
+   `~/.bashrc`. Not from `~/.bashrc` alone â€” see [Â§7.2](#72-bashrc-is-dead-for-non-interactive-shells).
 
 ---
 
@@ -53,7 +53,7 @@ Apt packages installed: `build-essential`, `pkg-config`, `libssl-dev`,
 
 Solana CLI config: RPC `http://localhost:8899`, keypair
 `~/.config/solana/id.json`, pubkey `ANX8ikrsGHQqW9wWXbYWZ4eQVL23mKrjmJGsMm1NS5R4`,
-commitment `confirmed`. **Dev keypair only — never fund it with real value.**
+commitment `confirmed`. **Dev keypair only â€” never fund it with real value.**
 
 ### Version notes
 
@@ -61,7 +61,7 @@ commitment `confirmed`. **Dev keypair only — never fund it with real value.**
   Agave stable from `release.anza.xyz/stable` (which was `4.2.2`), but Anchor 1.x
   manages its own Agave toolchain: the first `anchor` invocation runs
   `agave-install init 3.1.10` and re-points
-  `~/.local/share/solana/install/active_release` at 3.1.10. This is intended —
+  `~/.local/share/solana/install/active_release` at 3.1.10. This is intended â€”
   `anchor build`/`anchor test` must run against the toolchain Anchor supports.
   Do not "fix" this by re-installing a newer Agave; it will be re-pointed again.
 - **Anchor is pinned to `1.2.0`** in the bootstrap script (`ANCHOR_VERSION`).
@@ -81,7 +81,7 @@ wsl -u root -e bash ./scripts/bootstrap-wsl.sh
 ```
 
 **Run it as root the first time.** `sudo` in this WSL install requires a
-password, and `wsl -e bash` has no TTY to prompt on — but `wsl -u root` needs no
+password, and `wsl -e bash` has no TTY to prompt on â€” but `wsl -u root` needs no
 password at all. The script installs the apt packages as root and then
 re-executes itself as the normal user (uid 1000) for every user-level step, so
 nothing lands in root's `HOME`.
@@ -92,11 +92,11 @@ Once apt is satisfied, re-runs can go through the normal user:
 wsl -e bash ./scripts/bootstrap-wsl.sh
 ```
 
-The script is idempotent — verified by a clean second run that skipped every
+The script is idempotent â€” verified by a clean second run that skipped every
 install step. First run takes roughly 20 minutes (mostly `cargo install avm`,
 which compiles from source, ~4 min, and the Rust/Node downloads).
 
-If the file has CRLF line endings (see [§7.5](#75-crlf-line-endings)):
+If the file has CRLF line endings (see [Â§7.5](#75-crlf-line-endings)):
 
 ```powershell
 wsl -u root -e bash -c "sed 's/\r$//' ./scripts/bootstrap-wsl.sh | bash -s"
@@ -117,7 +117,7 @@ lines came back truncated.
 **Do this instead:**
 
 1. Write the script to a file with the `Write` tool (it emits LF, verified).
-   Put it outside the repo — e.g. `C:\Users\chite\AppData\Local\Temp\gb-t00\x.sh`.
+   Put it outside the repo â€” e.g. `C:\Users\chite\AppData\Local\Temp\gb-t00\x.sh`.
 2. Have the script redirect its own output to a file under `/mnt/c`.
 3. Run it with one dead-simple PowerShell line.
 4. Read the output file with the `Read` tool.
@@ -129,7 +129,7 @@ OUT=/mnt/c/Users/chite/AppData/Local/Temp/gb/mytask.out
 exec >"$OUT" 2>&1
 . "$HOME/.greekbet-env.sh"          # PATH + CARGO_TARGET_DIR
 
-cd /mnt/c/Users/chite/Downloads/projects/GreekBet/.claude/worktrees/lmsr-anchor-build
+cd /mnt/c/Users/chite/Downloads/projects/GreekBet/.claude/worktrees/lmsr-anchor-build/contracts
 cargo test -p lmsr
 echo "RC=$?"
 ```
@@ -141,7 +141,7 @@ wsl -e bash -lc "bash /mnt/c/Users/chite/AppData/Local/Temp/gb/mytask.sh"
 Then read `C:\Users\chite\AppData\Local\Temp\gb\mytask.out`.
 
 `bash -lc "bash <path>"` is the verified invocation: the `-l` makes it a login
-shell so `~/.profile` → `~/.greekbet-env.sh` runs and the toolchain is on `PATH`.
+shell so `~/.profile` â†’ `~/.greekbet-env.sh` runs and the toolchain is on `PATH`.
 Sourcing `~/.greekbet-env.sh` explicitly inside the script (as above) makes it
 robust even if someone drops the `-l`.
 
@@ -155,13 +155,13 @@ wsl -e bash -lc "cargo --version"
 wsl -e bash -lc "anchor --version"
 ```
 
-The moment you need a quote inside a quote, a `$`, or a `>`, go back to §3.1.
+The moment you need a quote inside a quote, a `$`, or a `>`, go back to Â§3.1.
 
 ### 3.3 Long-running commands
 
 `anchor build` from cold takes ~10 minutes; `cargo install avm` ~4 minutes.
 Run them in the background and poll the output file, or use a large timeout
-(the tool cap is 600000 ms). Do not conclude a timeout means failure — check
+(the tool cap is 600000 ms). Do not conclude a timeout means failure â€” check
 the log.
 
 ### 3.4 Path conversion
@@ -176,7 +176,7 @@ wslpath -w /home/chite                                    # -> \\wsl.localhost\U
 worktree's fixed WSL path is:
 
 ```
-/mnt/c/Users/chite/Downloads/projects/GreekBet/.claude/worktrees/lmsr-anchor-build
+/mnt/c/Users/chite/Downloads/projects/GreekBet/.claude/worktrees/lmsr-anchor-build/contracts
 ```
 
 ### 3.5 Root
@@ -192,7 +192,7 @@ export CARGO_TARGET_DIR="$HOME/.cache/greekbet-target"
 ```
 
 Exported by `~/.greekbet-env.sh` for every shell. The repo lives on `/mnt/c`,
-which WSL mounts as `v9fs` (9p) — a filesystem where Cargo's many-small-files
+which WSL mounts as `v9fs` (9p) â€” a filesystem where Cargo's many-small-files
 write pattern is pathologically slow. Sources stay on `/mnt/c`; **every build
 artifact goes to WSL-native ext4**.
 
@@ -201,13 +201,13 @@ artifact goes to WSL-native ext4**.
 Anchor 1.2.0 does **not** override it. Evidence from the T00 smoke run:
 
 - After `anchor build --arch v0` in a fresh `anchor init` project,
-  `ls ./target` → `No such file or directory`. The project directory has no
+  `ls ./target` â†’ `No such file or directory`. The project directory has no
   `target/` at all.
 - All outputs landed under `$CARGO_TARGET_DIR`:
   `deploy/<prog>.so`, `deploy/<prog>-keypair.json`, `idl/<prog>.json`,
   `types/<prog>.ts`, `sbpf-solana-solana/release/`, `debug/`, `release/`.
 - `anchor test` (both templates) found and used them with no extra config.
-- Also verified for a project living **on `/mnt/c`** (`stat -f -c %T .` → `v9fs`)
+- Also verified for a project living **on `/mnt/c`** (`stat -f -c %T .` â†’ `v9fs`)
   with `CARGO_TARGET_DIR` pointed at ext4: `anchor build --arch v0` took 7 s and
   `anchor test --validator legacy --skip-build` passed.
 - Plain `cargo test` in a scratch crate: no `./target`, artifacts in
@@ -223,11 +223,11 @@ but Anchor's generated TS tests import `../target/types/<program>`.
 - But `tsc`, editors, and any runtime read of `target/idl/*.json` will not find
   the files.
 
-**`anchor build -i <dir> -t <dir>` does not fix this — it is broken in Anchor
+**`anchor build -i <dir> -t <dir>` does not fix this â€” it is broken in Anchor
 1.2.0.** With or without pre-created directories it fails with
 `Error: No such file or directory (os error 2)` (verified both ways).
 
-**The fix that works** — a symlink in the workspace root, verified:
+**The fix that works** â€” a symlink in the workspace root, verified:
 
 ```sh
 ln -sfn "$CARGO_TARGET_DIR" <workspace-root>/target
@@ -254,17 +254,17 @@ anchor test --validator legacy --skip-build
 ### Why
 
 `anchor build` in Anchor 1.2.0 defaults to `--arch v3`, producing an **sbpf v3**
-ELF (`readelf -h` → `Machine: Linux BPF`, `Flags: 0x3, CPU Version: 3`).
+ELF (`readelf -h` â†’ `Machine: Linux BPF`, `Flags: 0x3, CPU Version: 3`).
 Agave 3.1.10's loader-v3 deploy path cannot load it:
 
-- `solana program deploy` → `Error: ELF error: ELF error: Failed to parse ELF file: invalid file header`
-- via `solana-test-validator` → the transaction logs
+- `solana program deploy` â†’ `Error: ELF error: ELF error: Failed to parse ELF file: invalid file header`
+- via `solana-test-validator` â†’ the transaction logs
   `"Program is not deployed"` / `"failed: Unsupported program id"`
 
 `cargo-build-sbf`'s own default is `--arch v0`; Anchor overrides it to `v3`.
 Building with `--arch v0` yields `Machine: <unknown>: 0x107`, `Flags: 0x0`, which
 deploys and executes correctly. Verified as a controlled A/B in the same project:
-v0 → test passes, v3 → test fails with the above.
+v0 â†’ test passes, v3 â†’ test fails with the above.
 
 ### Gotchas
 
@@ -278,11 +278,11 @@ v0 → test passes, v3 → test fails with the above.
   plain `anchor test --validator legacy` appears to pass. Observed during T00.
   Do not trust a green run that skipped `--arch v0`; wipe
   `$CARGO_TARGET_DIR/deploy` and `$CARGO_TARGET_DIR/sbpf*` when in doubt.
-- There is no Anchor.toml key for the arch — `[toolchain]` only carries
+- There is no Anchor.toml key for the arch â€” `[toolchain]` only carries
   `anchor_version`, `solana_version`, `package_manager`.
 
 If a future Anchor/Agave pairing makes sbpf v3 loadable, this rule can be
-revisited — re-run the A/B in [§6](#6-smoke-test-what-was-actually-verified).
+revisited â€” re-run the A/B in [Â§6](#6-smoke-test-what-was-actually-verified).
 
 ---
 
@@ -293,14 +293,14 @@ Run from a login shell, fresh projects, `$CARGO_TARGET_DIR/deploy` and
 
 | # | Scenario | Result |
 |---|---|---|
-| A | `anchor init` (default **litesvm** Rust template) → `anchor build --arch v0` → `anchor test --skip-build` | **pass** — `test_initialize ... ok`, 1 passed |
-| B | `anchor init --test-template mocha` → `anchor build --arch v0` → `anchor test --validator legacy --skip-build` | **pass** — `1 passing`, real on-chain txs against `solana-test-validator` |
-| C | control: `anchor build` (default `--arch v3`) → `anchor test --validator legacy --skip-build` | **fails as expected** — `Unsupported program id` |
-| D | `cargo new --lib` → `cargo test` | **pass**, no `./target` created |
-| E | Same as B but with the project on `/mnt/c` (v9fs) | **pass** — build 7 s, test passed |
+| A | `anchor init` (default **litesvm** Rust template) â†’ `anchor build --arch v0` â†’ `anchor test --skip-build` | **pass** â€” `test_initialize ... ok`, 1 passed |
+| B | `anchor init --test-template mocha` â†’ `anchor build --arch v0` â†’ `anchor test --validator legacy --skip-build` | **pass** â€” `1 passing`, real on-chain txs against `solana-test-validator` |
+| C | control: `anchor build` (default `--arch v3`) â†’ `anchor test --validator legacy --skip-build` | **fails as expected** â€” `Unsupported program id` |
+| D | `cargo new --lib` â†’ `cargo test` | **pass**, no `./target` created |
+| E | Same as B but with the project on `/mnt/c` (v9fs) | **pass** â€” build 7 s, test passed |
 
 `anchor build` from cold: **10 min 12 s**. Warm (deps cached in the shared
-`CARGO_TARGET_DIR`): **~4–22 s**.
+`CARGO_TARGET_DIR`): **~4â€“22 s**.
 
 ---
 
@@ -320,7 +320,7 @@ Ubuntu's stock `~/.bashrc` starts with:
 case $- in *i*) ;; *) return;; esac
 ```
 
-`wsl -e bash -lc '<cmd>'` — the way Windows-side tooling reaches WSL — is a
+`wsl -e bash -lc '<cmd>'` â€” the way Windows-side tooling reaches WSL â€” is a
 **login but non-interactive** shell. It sources `~/.profile`, which sources
 `~/.bashrc`, which immediately returns. Anything appended to `~/.bashrc` never
 runs. The first bootstrap attempt did exactly that and `cargo`, `node`, `anchor`
@@ -350,7 +350,7 @@ surfpool was deliberately not done: T09 specifies local-validator tests, and
 
 `anchor init --test-template` options in 1.2.0: `mocha`, `jest`, `rust`,
 `mollusk`, `litesvm` (default `litesvm`). `--package-manager`: `npm`, `yarn`,
-`pnpm`, `bun` (auto-detect cascade `pnpm` → `yarn` → `npm`). Pass
+`pnpm`, `bun` (auto-detect cascade `pnpm` â†’ `yarn` â†’ `npm`). Pass
 `--package-manager yarn` explicitly to get `yarn`.
 
 ### 7.5 CRLF line endings
@@ -376,7 +376,7 @@ wsl -u root -e bash -c "sed 's/\r$//' ./scripts/bootstrap-wsl.sh | bash -s"
 
 The default `anchor init` (litesvm) test failed out of the box with
 `Instruction(InvalidAccountData)` at `svm.add_program(...)`. Same root cause as
-[§5](#5-the-arch-v0-rule-mandatory) — it passes once built with `--arch v0`.
+[Â§5](#5-the-arch-v0-rule-mandatory) â€” it passes once built with `--arch v0`.
 
 ---
 
@@ -387,7 +387,7 @@ The default `anchor init` (litesvm) test failed out of the box with
 . "$HOME/.greekbet-env.sh"
 
 # Pure-Rust crates (T02-T04)
-cd /mnt/c/.../lmsr-anchor-build
+cd /mnt/c/.../lmsr-anchor-build/contracts
 cargo test -p lmsr
 
 # Anchor program (T05+)

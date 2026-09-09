@@ -1,11 +1,21 @@
-# GreekBet
+# GreekBet contracts — on-chain settlement
 
 Binary YES/NO prediction markets on Solana, priced by an LMSR automated market
 maker. Non-custodial: collateral lives in a per-market on-chain vault.
 
+This is the `contracts/` half of the repo — the Groupbet Next.js app lives at
+the root and is entirely separate. **Nothing in the app imports from here yet**;
+this phase deliberately builds and proves the on-chain unit on its own, with no
+frontend, indexer, or wallet dependency. Wiring the two together is later work.
+
 > **Devnet/testnet only. No real funds.** Nothing here has touched mainnet, and
 > the resolver is deliberately a stubbed authority pubkey with no oracle or
 > dispute logic behind it.
+
+Note the app currently settles markets **parimutuel** (the winning side splits
+the pot, see `src/lib/markets.ts`), whereas this program prices with an **LMSR
+market maker**. Those are different mechanisms, not two implementations of one —
+reconciling them is a decision for whoever does the integration.
 
 ## Layout
 
@@ -26,10 +36,15 @@ and validated off-chain against an oracle before the program ever calls it.
 
 ## Build and test
 
-Everything runs **inside WSL** (Ubuntu). Native Windows Anchor builds are not
-supported.
+Everything runs **inside WSL** (Ubuntu) and **from this `contracts/` directory**,
+not the repo root — the Cargo workspace and `Anchor.toml` live here. Native
+Windows Anchor builds are not supported.
+
+The `package.json` here is the Anchor test harness and is independent of the
+app's `package.json` at the repo root; they do not share `node_modules`.
 
 ```sh
+cd contracts
 bash scripts/bootstrap-wsl.sh        # rustup, Solana CLI, avm/Anchor, node, yarn
 . ~/.greekbet-env.sh                 # PATH + CARGO_TARGET_DIR
 
@@ -123,3 +138,21 @@ Phase complete except devnet. Against the exit criteria in
 | Resolver access control verified | **met** locally; devnet re-check in T10 |
 
 Work is tracked as 11 tickets in [`docs/tickets/`](docs/tickets/).
+
+## Integrating with the app
+
+Not done, and deliberately out of scope for this phase. Whoever picks it up
+should know:
+
+- **Shares are non-transferable.** Positions are internal program state, not SPL
+  tokens (`docs/DESIGN_DECISIONS.md` D2). If the app needs transferable
+  positions, that is a migration, not a config change.
+- **The market PDA cannot be auto-derived from the IDL.** Anchor cannot express a
+  hashed seed, so clients derive it explicitly:
+  `findProgramAddressSync([Buffer.from("market"), creator.toBuffer(), sha256(question)], programId)`
+  over the raw UTF-8 question bytes — no normalisation, no length prefix.
+- **The collateral mint is per-market runtime config**, so the app chooses it at
+  market creation rather than the program hardcoding one.
+- **The resolver is a bare pubkey.** The app's photo→AI resolution pipeline would
+  plug in as whatever key is allowed to call `resolve_market`; the program
+  deliberately has no opinion about how that decision is reached.
