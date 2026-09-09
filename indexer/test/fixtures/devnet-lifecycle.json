@@ -1,0 +1,181 @@
+{
+  "source": "devnet T10 lifecycle run, real Circle USDC",
+  "program": "GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ",
+  "captured": "2026-09-09T17:45:42.739Z",
+  "transactions": [
+    {
+      "label": "create_market",
+      "signature": "2JebBUAZZgXWMcKGtihgCoTVCDW4zckQaweqEVmhZsDfznUDdhkZk1EeGWGL222hT2tmUdHMQT2TsxM9HegwGXeM",
+      "slot": 495729871,
+      "blockTime": 1788974181,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: CreateMarket",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 233 of 185832 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 105 of 176043 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program data: WLiC5+JUBjqMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yJi6Xy75IFiUVrEv6YIhfkkyAf9h+S0vaNRPphfGUpArLj42jZ0i2XXD0qo7xlbxdWRJ0ndaUy1HhgHWqEvjE3g7RCyzkSFX8TqTPQE0KC0DK1/+zQGi2/G3eQYI3wAup0j1MGschggZ8r4xkCQUCVjhiXy42J5rzuAmVVl2vJ+sc9zzOpU0mVvdQ2BjbhMhFYGTo/yqEngHBF9VN+wl4gqAlpgAAAAAAA/EaQAAAAAAZZShagAAAADclKFqAAAAAA==",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 26023 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "buy_yes_a",
+      "signature": "3XLcFrfbCoQPasUJR8QQYvrrJJTbHA4PVBarAoMPbiHWmrVRR2Npf26aBwVsjABtTASWPZXcsVC4XCjECdu4kHq3",
+      "slot": 495729880,
+      "blockTime": 1788974182,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: BuyShares",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 76 of 164513 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program data: 8GJFCv3q4kGMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yEXABN/uYZwjmt8PL6Vw4bkPwsPzSzrfkAzfnHR/Iu4wAEBCDwAAAAAAJCEdAAAAAAAy/gcAAAAAAAAAAAAAAAAAAAAAAAAAAAAkIR0AAAAAAAAAAAAAAAAA/VoIAAAAAAAkIR0AAAAAAAAAAAAAAAAA",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 49878 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "buy_no_b",
+      "signature": "cVhQh4WxnVrM5J9fKeYg8TYTPzrNKK8nEwqCq5BdjWVrqG6RiaQWs1bZ5jiHgUTEBB6YiJt8jqFsn1D1W3YnQQS",
+      "slot": 495729887,
+      "blockTime": 1788974183,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: BuyShares",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 76 of 156645 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program data: 8GJFCv3q4kGMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yJ6mxnvrmbXto+Ld8xu0f2HtT3lzaU3OwQq+Qq6yJVpEAYAaBgAAAAAAsC0NAAAAAAAnEQcAAAAAACQhHQAAAAAAAAAAAAAAAAAkIR0AAAAAALAtDQAAAAAAHgcIAAAAAAAAAAAAAAAAALAtDQAAAAAA",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 56848 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "buy_yes_c",
+      "signature": "3kwRGUwidj95j77Vv3nWkdt6TfNAeZDUVUALvpttbUfs6kmTCwtPendLNhifmeYVDAURqLU3Hc6CUpryPLdQ73Pd",
+      "slot": 495729947,
+      "blockTime": 1788974193,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: BuyShares",
+        "Program 11111111111111111111111111111111 invoke [2]",
+        "Program 11111111111111111111111111111111 success",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 76 of 155979 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program data: 8GJFCv3q4kGMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yCNeShcyZmM63okfl6Dyc4//8mT79wYOBg9wYDrE57aqAICEHgAAAAAAWJg1AAAAAABBsAgAAAAAACQhHQAAAAAAsC0NAAAAAAB8uVIAAAAAALAtDQAAAAAAq1YJAAAAAABYmDUAAAAAAAAAAAAAAAAA",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 59788 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "sell_a",
+      "signature": "5GMkarkhAossJbz1dtGDEtECu8VcN6Ch5JUciRhFJM51jcGrXYKsyotS58eANe4GNQWnsJU1H4vDaVPRA9qNheMu",
+      "slot": 495729959,
+      "blockTime": 1788974195,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: SellShares",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 76 of 158733 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program data: I+cFNeSecfuMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yEXABN/uYZwjmt8PL6Vw4bkPwsPzSzrfkAzfnHR/Iu4wAJKQDgAAAAAAY78IAAAAAAAZKgkAAAAAAHy5UgAAAAAAsC0NAAAAAADqKEQAAAAAALAtDQAAAAAAP/0IAAAAAACSkA4AAAAAAAAAAAAAAAAA",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 56542 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "close_market",
+      "signature": "3KoEbzQtFWMwoSe92wXGZR6GyB9j8fNgbpUyf4PD6y8nZM7M6yp85E3XEEbSUh3HkzJCYf4EotrYBLu1N2hJs2dR",
+      "slot": 495730607,
+      "blockTime": 1788974302,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: CloseMarket",
+        "Program data: Vlt3K14A2XGMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yNyUoWoAAAAA3pShagAAAADqKEQAAAAAALAtDQAAAAAA",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 4767 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "resolve_market",
+      "signature": "4ZFsTUMn7ShVeZ5MWnPMTzECB5v8AGf5YxQY9WuKDXMbXShWDARzu1ydznx8Rrwpr8QeD6Qgh6CxATNmMEFJA2eC",
+      "slot": 495730615,
+      "blockTime": 1788974303,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: ResolveMarket",
+        "Program data: WUPmX49qx8qMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yC4+No2dItl1w9KqO8ZW8XVkSdJ3WlMtR4YB1qhL4xN4AN+UoWoAAAAA6ihEAAAAAACwLQ0AAAAAAA==",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 5190 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "redeem_winner_a",
+      "signature": "2DMvUCK7hfRQj5ks9nKT756UweXqDJErPdDFUfuFqiCrHYwpnMQ3hEy2iunmWNLiYy5Sss3jh3npdeXq4UBcRT52",
+      "slot": 495730622,
+      "blockTime": 1788974304,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: Redeem",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 76 of 190064 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program data: Dh23Rx+layaMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yEXABN/uYZwjmt8PL6Vw4bkPwsPzSzrfkAzfnHR/Iu4wAJKQDgAAAAAAAAAAAAAAAACSkA4AAAAAAAE=",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 10889 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "redeem_winner_c",
+      "signature": "2ud5JrRcFg5ZAAkuBBupuANRierzPhE3ZLH8AUz7YGRrqVhYEFoSMoFmELgFAz6njwto5Esz3CgMaAE9ryqp1Xs7",
+      "slot": 495730680,
+      "blockTime": 1788974314,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: Redeem",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA invoke [2]",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA consumed 76 of 190064 compute units",
+        "Program TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA success",
+        "Program data: Dh23Rx+layaMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yCNeShcyZmM63okfl6Dyc4//8mT79wYOBg9wYDrE57aqAFiYNQAAAAAAAAAAAAAAAABYmDUAAAAAAAE=",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 10889 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    },
+    {
+      "label": "redeem_loser_b",
+      "signature": "5t48nfRVdHLsSxJxvnrs8qda55gmCB18Fj1forUf5JHf5qs7Vs2Vbe4oTu7ZHmdTg6ZoqRmYYi6k6pizLAAAfa3L",
+      "slot": 495730685,
+      "blockTime": 1788974315,
+      "failed": false,
+      "logs": [
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ invoke [1]",
+        "Program log: Instruction: Redeem",
+        "Program data: Dh23Rx+layaMNsoPzusHJGdYi6rJgKCIhVN/vCie4nOvHjLrJjr8yJ6mxnvrmbXto+Ld8xu0f2HtT3lzaU3OwQq+Qq6yJVpEAAAAAAAAAAAAsC0NAAAAAAAAAAAAAAAAAAE=",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ consumed 9087 of 200000 compute units",
+        "Program GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ success"
+      ]
+    }
+  ]
+}

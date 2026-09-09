@@ -1,0 +1,9 @@
+node_modules/
+dist/
+
+# Runtime output and bookkeeping. The event stream and the checkpoint are
+# machine-local state, not source — committing them would replay stale events
+# into whatever consumes this next.
+data/
+*.jsonl
+checkpoint.json
