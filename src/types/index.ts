@@ -1,105 +1,150 @@
 /**
  * Shared domain types for Groupbet.
  *
- * These are the single source of truth for the shape of data that flows
- * between the API routes (`src/app/api/**`) and the client screens
- * (`src/app/**`). Keep them small and serializable (JSON-friendly) so the
- * same types work on both the server and the client.
+ * Single source of truth for what flows between the API routes
+ * (`src/app/api/**`) and the client screens (`src/app/**`). Small and
+ * JSON-serializable so the same types work on both sides.
+ *
+ * ## Off-chain vs on-chain
+ *
+ * Markets are **LMSR prediction markets on Solana**. The program owns the money
+ * and the pricing: liquidity `b`, share supplies, positions, prices, and the
+ * resolved outcome all live on chain, and the app learns about them from the
+ * indexer's event stream (`src/lib/chain/projection.ts`).
+ *
+ * What stays off chain is what the program has no concept of: groups,
+ * membership, the question *text* (the program stores only its SHA-256), and
+ * the resolution photo. {@link Market} is therefore metadata joined to a
+ * `ChainMarket` at read time — never a second copy of the on-chain state.
+ *
+ * All base-unit amounts are **decimal strings**. Shares reach 1e15 and a JSON
+ * number would silently lose precision at the top of the range.
  */
 
 export type ID = string;
 
-/** Which side of a yes/no market a bet is on. */
+/** Which side of a yes/no market. Maps to the program's `Outcome` enum. */
 export type Side = "yes" | "no";
 
-/** Lifecycle of a prediction market. */
-export type MarketStatus = "open" | "resolving" | "resolved";
+/** Mirrors the program's `MarketStatus`. */
+export type MarketStatus = "open" | "closed" | "resolved";
 
 /**
- * A person. Created from just a selfie + phone number.
- * - `verified` comes from World Selfie Check (proof of personhood).
- * - `walletAddress` is provisioned automatically by Privy.
- * - `balance` is the user's internal play-token balance.
+ * A person.
+ *
+ * `walletAddress` is a real Solana address. Until Privy's Solana support is
+ * wired up, the key is generated and held server-side — see
+ * `src/lib/chain/wallet.ts` for why, and what that does and does not mean.
  */
 export interface User {
   id: ID;
   name: string;
   phone: string;
-  /** Data URL / remote URL of the signup selfie. Also used for face-match. */
   avatarUrl: string;
-  /** Auto-created embedded wallet address (Privy). */
+  /** Base58 Solana address. */
   walletAddress: string;
-  /** Proof-of-personhood id from World Selfie Check. */
   worldId: string;
-  /** True once World Selfie Check has verified a real, unique human. */
   verified: boolean;
-  /** Internal play-token balance. */
-  balance: number;
   createdAt: number;
 }
 
-/** A private group of friends (like a Venmo group) that markets live inside. */
+/** A private group of friends that markets live inside. Purely off-chain. */
 export interface Group {
   id: ID;
   name: string;
-  /** 6-char alphanumeric invite code. */
   code: string;
   ownerId: ID;
   memberIds: ID[];
   createdAt: number;
 }
 
-/** A single yes/no prediction market inside a group. */
+/**
+ * Off-chain metadata for an on-chain market.
+ *
+ * `address` is the market PDA and the join key to everything on chain. The
+ * question text lives here because the program stores only `sha256(question)` —
+ * losing this text means the market can still trade but can never again be
+ * displayed or its PDA re-derived.
+ */
 export interface Market {
-  id: ID;
+  /** Market PDA, base58. The canonical id everywhere. */
+  address: string;
   groupId: ID;
   title: string;
   description?: string;
+  /** Internal user id of the creator. */
   createdBy: ID;
   createdAt: number;
-  /** Betting closes at this time. */
-  expiresAt: number;
-  status: MarketStatus;
-  /** Set once resolved. */
-  outcome?: Side;
-  /** Uploaded photo used for resolution. */
+  /** Photo the AI resolver read, if resolved that way. */
   resolutionImageUrl?: string;
-  /** Sanitized, AI-generated description of the resolution photo. */
   resolutionNote?: string;
+  /** Signature of the `create_market` transaction, for explorer links. */
+  createSignature?: string;
 }
 
-/** A stake placed by a user on one side of a market. */
-export interface Bet {
-  id: ID;
-  marketId: ID;
-  userId: ID;
-  side: Side;
-  amount: number;
-  createdAt: number;
-  /** Tokens returned once the market resolves (0 if the bet lost). */
-  payout?: number;
-  /** Display name, filled in on MarketView (not stored). */
+/* ------------------------------------------------------------------ */
+/* View models — assembled from metadata + the indexer projection      */
+/* ------------------------------------------------------------------ */
+
+/**
+ * LMSR pricing for a market.
+ *
+ * Replaces the old parimutuel pool. The distinction is not cosmetic: under a
+ * parimutuel the odds are just the ratio of money already staked, whereas here
+ * the price is set by a market maker along a bonding curve, the creator
+ * subsidises it with `b·ln2`, and a trader can **sell before resolution** at
+ * the prevailing price rather than being locked in.
+ */
+export interface MarketPricing {
+  /** Implied probability of YES, 0..1, from the on-chain marginal price. */
+  yesProb: number;
+  noProb: number;
+  /** Outstanding shares, base units. */
+  qYes: string;
+  qNo: string;
+  /** Liquidity parameter, base units. */
+  b: string;
+  /** Creator's subsidy, `b·ln2`, base units. */
+  seedAmount: string;
+  /** Collateral held by the vault, base units. */
+  volume: string;
+}
+
+/** One on-chain trade. */
+export interface Trade {
+  signature: string;
+  slot: number;
+  blockTime: number | null;
+  /** Wallet address of the trader. */
+  user: string;
+  /** Display name, joined from the user store where known. */
   userName?: string;
   userAvatarUrl?: string;
+  side: Side;
+  isBuy: boolean;
+  /** Base units. */
+  collateral: string;
+  shares: string;
 }
 
-/* ------------------------------------------------------------------ */
-/* Derived / view-model types (computed, never stored)                 */
-/* ------------------------------------------------------------------ */
-
-/** Pool totals + implied odds for a market, derived from its bets. */
-export interface MarketPool {
-  yes: number;
-  no: number;
-  total: number;
-  /** Implied probability of "yes" (0..1). */
-  yesProb: number;
-  /** Implied probability of "no" (0..1). */
-  noProb: number;
+/** A holder's position in one market. */
+export interface Position {
+  yesShares: string;
+  noShares: string;
+  payout?: string;
+  redeemed: boolean;
 }
 
-/** A market plus everything a screen needs to render it in one payload. */
+/** Everything a screen needs to render a market, in one payload. */
 export interface MarketView extends Market {
-  pool: MarketPool;
-  bets: Bet[];
+  status: MarketStatus;
+  /** Unix ms, converted from the program's seconds. */
+  expiresAt: number;
+  outcome?: Side;
+  pricing: MarketPricing;
+  trades: Trade[];
+  /** The requesting user's position, when they have one. */
+  myPosition?: Position;
+  /** True once the market exists on chain and the indexer has seen it. */
+  indexed: boolean;
 }

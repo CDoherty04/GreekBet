@@ -1,0 +1,1733 @@
+{
+  "address": "GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ",
+  "metadata": {
+    "name": "greekbet",
+    "version": "0.1.0",
+    "spec": "0.1.0",
+    "description": "GreekBet — binary YES/NO prediction markets priced by an LMSR AMM"
+  },
+  "instructions": [
+    {
+      "name": "buy_shares",
+      "docs": [
+        "Buy `outcome` shares by depositing exactly `usdc_amount` of collateral.",
+        "",
+        "Slippage is enforced **on-chain** (plan §2.3) as a floor on what the",
+        "caller receives: the trade reverts with `SlippageExceeded` unless it",
+        "credits at least `min_shares_out` share base units. `0` disables the",
+        "check but still cannot produce a zero-output trade — that is",
+        "`ZeroCostTrade`.",
+        "",
+        "The plan called this argument `max_slippage`. It is named for what it",
+        "actually is: a price-based limit would have to say *which* price",
+        "(marginal-before, marginal-after, or average-paid), and those differ by",
+        "exactly the trade impact being guarded against. A minimum-output limit",
+        "needs no such choice, no second LMSR call, and no rounding decision that",
+        "could favour the caller — the worst effective price is simply",
+        "`usdc_amount / min_shares_out`, computable client-side with no knowledge",
+        "of the curve."
+      ],
+      "discriminator": [
+        40,
+        239,
+        138,
+        154,
+        8,
+        37,
+        106,
+        108
+      ],
+      "accounts": [
+        {
+          "name": "buyer",
+          "docs": [
+            "The buyer. Signs the collateral transfer and pays rent the first time",
+            "they trade in this market (`init_if_needed` on `position`), hence `mut`."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "docs": [
+            "The market being traded. `mut` because `q_yes` / `q_no` move.",
+            "",
+            "The seeds constraint mirrors `close_market`: it re-derives the market",
+            "from the `creator` and `question_hash` it stores, using the stored bump,",
+            "so this is a `create_program_address` check rather than a search."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.creator",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.question_hash",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The buyer's position in this market, created on first purchase.",
+            "",
+            "# Why `has_one` is absent and the seeds are the whole check",
+            "",
+            "`init_if_needed` runs the account's other constraints *after* a fresh",
+            "account has been zero-initialised, so `has_one = market` would fail on",
+            "the very first buy (`Pubkey::default() != market.key()`). The seeds",
+            "constraint is strictly stronger anyway: it derives the address from",
+            "`market.key()` and `buyer.key()`, so no other account can be passed here",
+            "at all, whether it exists yet or not. The handler then (re-)writes",
+            "`market`, `owner` and `bump` unconditionally, which is idempotent for an",
+            "existing position and initialisation for a new one."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "buyer"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The market's collateral vault — the destination of the deposit. Pinned",
+            "to the pubkey the market stored at creation."
+          ],
+          "writable": true
+        },
+        {
+          "name": "buyer_token_account",
+          "docs": [
+            "Where the collateral comes from. Validated against the market's own",
+            "`collateral_mint` (D3) and required to belong to the signer, so a buyer",
+            "cannot spend a third party's account even if that account has delegated",
+            "authority elsewhere."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "outcome",
+          "type": {
+            "defined": {
+              "name": "Outcome"
+            }
+          }
+        },
+        {
+          "name": "usdc_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_shares_out",
+          "type": "u64"
+        }
+      ]
+    },
+    {
+      "name": "close_market",
+      "docs": [
+        "Mark a market closed once `close_time` has passed. Permissionless.",
+        "",
+        "**Owned by T06.**"
+      ],
+      "discriminator": [
+        88,
+        154,
+        248,
+        186,
+        48,
+        14,
+        123,
+        244
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "docs": [
+            "The market to close. Must currently be `Open` and past its `close_time`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.creator",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.question_hash",
+                "account": "Market"
+              }
+            ]
+          }
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "create_market",
+      "docs": [
+        "Create a market and seed its vault with the LMSR max subsidy.",
+        "",
+        "`resolver` is stored verbatim and otherwise unused in this phase.",
+        "**Owned by T06.**"
+      ],
+      "discriminator": [
+        103,
+        226,
+        97,
+        235,
+        200,
+        188,
+        251,
+        254
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "docs": [
+            "Pays rent for both new accounts and funds the vault seed."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "docs": [
+            "The new market. Seeds are `[MARKET_SEED, creator, sha256(question)]`, so",
+            "one creator can run many markets and two creators asking the same",
+            "question cannot collide.",
+            "",
+            "# Why the hash seed is written `&question_hash(&question)`",
+            "",
+            "Not stylistic — the alternative does not build. Anchor 1.2.0's IDL",
+            "generator (`anchor_syn::idl::accounts::parse_seed`) can only describe",
+            "seeds that are constants, whole instruction arguments, or account",
+            "fields. A `MethodCall` seed such as `question_hash(&question).as_ref()`",
+            "falls into its catch-all branch, which re-emits the expression verbatim",
+            "into a generated function where the instruction arguments are **not** in",
+            "scope: `anchor build` then fails the IDL step with",
+            "`E0425: cannot find value 'question' in this scope`, even though the",
+            "`.so` itself compiles.",
+            "",
+            "Written as a reference to a call with arguments, `parse_seed` instead",
+            "returns `Err`, `get_pda` swallows it, and the account is emitted with no",
+            "`pda` metadata — which is the correct outcome anyway, since \"SHA-256 of",
+            "an argument\" is not expressible in the IDL's seed vocabulary. The",
+            "on-chain derivation is unaffected: that constraint is expanded inside",
+            "`try_accounts`, where `question` is in scope.",
+            "",
+            "Consequence for clients (T09/T10): `anchor.web3` cannot auto-derive this",
+            "PDA. Derive it explicitly as",
+            "`findProgramAddressSync([Buffer.from(\"market\"), creator.toBuffer(), sha256(question)], programId)`."
+          ],
+          "writable": true
+        },
+        {
+          "name": "collateral_mint",
+          "docs": [
+            "The market's collateral mint — **per-market runtime config** (D3), never",
+            "a program constant.",
+            "",
+            "The decimals check is what lets T08 redeem winning shares 1:1: share",
+            "counts and collateral must be the same 6-decimal base unit, and a mint",
+            "with different decimals would silently break that mapping."
+          ]
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The market's collateral vault: an SPL token account for",
+            "`collateral_mint` whose **authority is the market PDA** (plan §2.1), so",
+            "only this program can move collateral out of it.",
+            "",
+            "Declared after `market` and `collateral_mint` because its seeds and its",
+            "`token::*` constraints reference both — Anchor resolves accounts in",
+            "declaration order."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  118,
+                  97,
+                  117,
+                  108,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "creator_token_account",
+          "docs": [
+            "Where the `b·ln 2` seed deposit comes from. Must hold the market's",
+            "collateral mint and belong to the creator."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        },
+        {
+          "name": "system_program",
+          "address": "11111111111111111111111111111111"
+        }
+      ],
+      "args": [
+        {
+          "name": "question",
+          "type": "string"
+        },
+        {
+          "name": "close_time",
+          "type": "i64"
+        },
+        {
+          "name": "initial_liquidity_b",
+          "type": "u64"
+        },
+        {
+          "name": "resolver",
+          "type": "pubkey"
+        }
+      ]
+    },
+    {
+      "name": "redeem",
+      "docs": [
+        "Redeem a resolved position: winning shares 1:1, losing shares zero.",
+        "",
+        "**Owned by T08.**"
+      ],
+      "discriminator": [
+        184,
+        12,
+        86,
+        149,
+        70,
+        196,
+        97,
+        225
+      ],
+      "accounts": [
+        {
+          "name": "owner",
+          "docs": [
+            "The position holder. Must sign, and is the only key that can redeem",
+            "this position (`has_one = owner` below). Also the rent recipient when",
+            "the position account is closed, hence `mut`."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "market",
+          "docs": [
+            "The resolved market. Read-only — redemption does not move `q_yes` /",
+            "`q_no`; the LMSR state is frozen once the market resolves.",
+            "",
+            "This account also supplies the seeds that sign the vault withdrawal, so",
+            "it must be a real, program-owned `Market` (which `Account<_, Market>`",
+            "enforces via owner + discriminator) sitting at its own canonical PDA",
+            "(which the `seeds`/`bump` constraint enforces).",
+            "",
+            "The seeds constraint is defence in depth rather than a fix: a",
+            "non-canonical `Market` was already unusable here, because the position",
+            "PDA is derived from `market.key()`, the vault is pinned by",
+            "`address = market.vault`, and the signer derived from a forged market",
+            "would not be the vault's authority, so the CPI would fail. T09 observed",
+            "that this instruction was the only one of the six without the",
+            "constraint — safe incidentally rather than by construction. Made",
+            "explicit so the guarantee does not depend on that reasoning surviving a",
+            "future edit."
+          ],
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.creator",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.question_hash",
+                "account": "Market"
+              }
+            ]
+          },
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The caller's position in this market.",
+            "",
+            "`close = owner` returns the rent once redemption succeeds. Anchor runs",
+            "the close in `exit()`, i.e. *after* the handler body and after the token",
+            "CPI, so it cannot be used to skip the state update — the zeroing in the",
+            "handler still happens first."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "owner"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The market's collateral vault. Pinned to the pubkey the market stored",
+            "at creation, so a look-alike token account cannot be substituted."
+          ],
+          "writable": true
+        },
+        {
+          "name": "owner_token_account",
+          "docs": [
+            "Where the payout lands. Validated against the market's own",
+            "`collateral_mint` (D3), never against a hardcoded mint."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": []
+    },
+    {
+      "name": "resolve_market",
+      "docs": [
+        "Write the winning outcome. Callable only by the stored resolver.",
+        "",
+        "An access-controlled state write and nothing more — no dispute, vote, or",
+        "oracle logic in this phase. **Owned by T06.**"
+      ],
+      "discriminator": [
+        155,
+        23,
+        80,
+        173,
+        46,
+        74,
+        23,
+        239
+      ],
+      "accounts": [
+        {
+          "name": "market",
+          "docs": [
+            "The market to resolve. Must currently be `Closed`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.creator",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.question_hash",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "resolver",
+          "docs": [
+            "The key stored in `market.resolver` at creation. A bare pubkey with no",
+            "logic attached (plan §2.2) — being this key and signing is the entire",
+            "authorization model."
+          ],
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        }
+      ],
+      "args": [
+        {
+          "name": "winning_outcome",
+          "type": {
+            "defined": {
+              "name": "Outcome"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sell_shares",
+      "docs": [
+        "Sell `share_amount` of `outcome` back to the market.",
+        "",
+        "Mirror of [`buy_shares`]: reverts with `SlippageExceeded` unless",
+        "proceeds are at least `min_usdc_out`. **Owned by T07.**"
+      ],
+      "discriminator": [
+        184,
+        164,
+        169,
+        16,
+        231,
+        158,
+        199,
+        196
+      ],
+      "accounts": [
+        {
+          "name": "seller",
+          "docs": [
+            "The position holder. Must sign; only this key can unwind this position."
+          ],
+          "writable": true,
+          "signer": true
+        },
+        {
+          "name": "market",
+          "docs": [
+            "The market being traded. `mut` because `q_yes` / `q_no` move.",
+            "",
+            "This account also supplies the seeds that sign the vault withdrawal, so",
+            "it is pinned to its own canonical PDA as well as being checked for owner",
+            "and discriminator by `Account<_, Market>`."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.creator",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.question_hash",
+                "account": "Market"
+              }
+            ]
+          },
+          "relations": [
+            "position"
+          ]
+        },
+        {
+          "name": "position",
+          "docs": [
+            "The seller's position in this market.",
+            "",
+            "Deliberately **not** closed when it empties out. A seller who unwinds",
+            "their whole holding keeps a zeroed position account (and its rent) and",
+            "can buy back into the same PDA without re-paying for it; `redeem` is what",
+            "finally closes it and returns the rent. Closing here would also mean an",
+            "`init_if_needed` on the buy side racing an account close in the same",
+            "slot, which is a failure mode with no upside.",
+            "",
+            "The owner check is spelled out rather than written `has_one = owner`",
+            "because the signer field is `seller`, not `owner`; `has_one` matches on",
+            "the *field name* in this struct."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  112,
+                  111,
+                  115,
+                  105,
+                  116,
+                  105,
+                  111,
+                  110
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market"
+              },
+              {
+                "kind": "account",
+                "path": "seller"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The market's collateral vault — the source of the payout. Pinned to the",
+            "pubkey the market stored at creation, so a look-alike token account",
+            "cannot be substituted."
+          ],
+          "writable": true
+        },
+        {
+          "name": "seller_token_account",
+          "docs": [
+            "Where the proceeds land. Validated against the market's own",
+            "`collateral_mint` (D3), never against a hardcoded mint."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "outcome",
+          "type": {
+            "defined": {
+              "name": "Outcome"
+            }
+          }
+        },
+        {
+          "name": "share_amount",
+          "type": "u64"
+        },
+        {
+          "name": "min_usdc_out",
+          "type": "u64"
+        }
+      ]
+    }
+  ],
+  "accounts": [
+    {
+      "name": "Market",
+      "discriminator": [
+        219,
+        190,
+        213,
+        55,
+        0,
+        227,
+        198,
+        154
+      ]
+    },
+    {
+      "name": "UserPosition",
+      "discriminator": [
+        251,
+        248,
+        209,
+        245,
+        83,
+        234,
+        17,
+        27
+      ]
+    }
+  ],
+  "events": [
+    {
+      "name": "MarketClosed",
+      "discriminator": [
+        86,
+        91,
+        119,
+        43,
+        94,
+        0,
+        217,
+        113
+      ]
+    },
+    {
+      "name": "MarketCreated",
+      "discriminator": [
+        88,
+        184,
+        130,
+        231,
+        226,
+        84,
+        6,
+        58
+      ]
+    },
+    {
+      "name": "MarketResolved",
+      "discriminator": [
+        89,
+        67,
+        230,
+        95,
+        143,
+        106,
+        199,
+        202
+      ]
+    },
+    {
+      "name": "Redeemed",
+      "discriminator": [
+        14,
+        29,
+        183,
+        71,
+        31,
+        165,
+        107,
+        38
+      ]
+    },
+    {
+      "name": "SharesBought",
+      "discriminator": [
+        240,
+        98,
+        69,
+        10,
+        253,
+        234,
+        226,
+        65
+      ]
+    },
+    {
+      "name": "SharesSold",
+      "discriminator": [
+        35,
+        231,
+        5,
+        53,
+        228,
+        158,
+        113,
+        251
+      ]
+    }
+  ],
+  "errors": [
+    {
+      "code": 6000,
+      "name": "MarketNotOpen",
+      "msg": "Market is not open"
+    },
+    {
+      "code": 6001,
+      "name": "MarketNotClosed",
+      "msg": "Market is not closed"
+    },
+    {
+      "code": 6002,
+      "name": "MarketNotResolved",
+      "msg": "Market is not resolved"
+    },
+    {
+      "code": 6003,
+      "name": "MarketAlreadyResolved",
+      "msg": "Market is already resolved"
+    },
+    {
+      "code": 6004,
+      "name": "CloseTimeNotReached",
+      "msg": "Close time has not been reached"
+    },
+    {
+      "code": 6005,
+      "name": "CloseTimeInPast",
+      "msg": "Close time is in the past"
+    },
+    {
+      "code": 6006,
+      "name": "Unauthorized",
+      "msg": "Signer is not the resolver authority"
+    },
+    {
+      "code": 6007,
+      "name": "BOutOfRange",
+      "msg": "Liquidity parameter b is out of range"
+    },
+    {
+      "code": 6008,
+      "name": "QOutOfRange",
+      "msg": "Share quantity is out of range"
+    },
+    {
+      "code": 6009,
+      "name": "SlippageExceeded",
+      "msg": "Slippage tolerance exceeded"
+    },
+    {
+      "code": 6010,
+      "name": "InsufficientShares",
+      "msg": "Insufficient shares in position"
+    },
+    {
+      "code": 6011,
+      "name": "ZeroCostTrade",
+      "msg": "Trade moves zero collateral or zero shares"
+    },
+    {
+      "code": 6012,
+      "name": "InvalidMint",
+      "msg": "Token account mint does not match the market collateral mint"
+    },
+    {
+      "code": 6013,
+      "name": "InvalidVault",
+      "msg": "Vault account does not match the market vault"
+    },
+    {
+      "code": 6014,
+      "name": "InvalidMintDecimals",
+      "msg": "Collateral mint must have 6 decimals"
+    },
+    {
+      "code": 6015,
+      "name": "VaultInsolvent",
+      "msg": "Vault is insolvent for this withdrawal"
+    },
+    {
+      "code": 6016,
+      "name": "QuestionTooLong",
+      "msg": "Question exceeds the maximum length"
+    },
+    {
+      "code": 6017,
+      "name": "NothingToRedeem",
+      "msg": "Nothing to redeem"
+    },
+    {
+      "code": 6018,
+      "name": "MathOverflow",
+      "msg": "Arithmetic overflow"
+    },
+    {
+      "code": 6019,
+      "name": "DivByZero",
+      "msg": "Division by zero"
+    },
+    {
+      "code": 6020,
+      "name": "InvalidInput",
+      "msg": "Invalid input"
+    }
+  ],
+  "types": [
+    {
+      "name": "Market",
+      "docs": [
+        "A single binary YES/NO market (plan §2.1). PDA, seeds",
+        "`[MARKET_SEED, creator, question_hash]`.",
+        "",
+        "All quantities (`b`, `q_yes`, `q_no`) are 6-decimal base units — the same",
+        "unit the LMSR crate takes and returns, so they are passed straight through",
+        "with no scaling of any kind. See `docs/DESIGN_DECISIONS.md` D1."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "creator",
+            "docs": [
+              "Who called `create_market` and seeded the vault."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "resolver",
+            "docs": [
+              "The only key allowed to call `resolve_market`.",
+              "",
+              "**A bare pubkey and nothing more** (plan §2.2/§2.3). This is an",
+              "intentional seam for a future oracle/dispute system; do not build",
+              "resolver logic against it in this phase."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "collateral_mint",
+            "docs": [
+              "The SPL mint this market takes collateral in — **per market, never a",
+              "program constant** (D3). Every token account in every instruction is",
+              "validated against this."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "The market's collateral vault: an SPL token account for",
+              "[`Self::collateral_mint`] whose authority is this market PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "question_hash",
+            "docs": [
+              "SHA-256 of the question bytes. Part of the market PDA's seeds, so it is",
+              "stored rather than recomputed, and lets a client verify the stored",
+              "string was not tampered with."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "question",
+            "docs": [
+              "The human-readable question, capped at",
+              "[`MAX_QUESTION_LEN`](crate::constants::MAX_QUESTION_LEN) bytes.",
+              "",
+              "The cap is what makes this account fixed-size; `create_market` must",
+              "enforce it via [`validate_question_len`]."
+            ],
+            "type": "string"
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "Unix timestamp of creation, from `Clock`."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "close_time",
+            "docs": [
+              "Unix timestamp after which trading stops and `close_market` may be",
+              "cranked."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "b",
+            "docs": [
+              "LMSR liquidity parameter, in collateral base units. Constrained to",
+              "`[lmsr::B_MIN, lmsr::B_MAX]` at creation (D4)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_yes",
+            "docs": [
+              "Outstanding YES shares, base units. Capped at `lmsr::MAX_Q` on every buy."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_no",
+            "docs": [
+              "Outstanding NO shares, base units. Capped at `lmsr::MAX_Q` on every buy."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "status",
+            "docs": [
+              "Lifecycle state."
+            ],
+            "type": {
+              "defined": {
+                "name": "MarketStatus"
+              }
+            }
+          },
+          {
+            "name": "winning_outcome",
+            "docs": [
+              "`None` until `resolve_market` runs; `Some(_)` exactly when",
+              "[`Self::status`] is [`MarketStatus::Resolved`].",
+              "",
+              "T08 must not `unwrap` this — a `None` here with a `Resolved` status is",
+              "an invariant violation and should surface as an error."
+            ],
+            "type": {
+              "option": {
+                "defined": {
+                  "name": "Outcome"
+                }
+              }
+            }
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for the market PDA itself."
+            ],
+            "type": "u8"
+          },
+          {
+            "name": "vault_bump",
+            "docs": [
+              "Bump for the vault PDA. Stored so T07/T08 can sign vault withdrawals",
+              "without re-deriving."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketClosed",
+      "docs": [
+        "Emitted once per successful `close_market`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market that transitioned to `Closed`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "close_time",
+            "docs": [
+              "The `close_time` the market was created with."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "closed_at",
+            "docs": [
+              "`Clock::unix_timestamp` when the crank actually landed. Always",
+              "`>= close_time`, and the gap is however long it took someone to crank."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "q_yes",
+            "docs": [
+              "LMSR state frozen at close, so an indexer does not have to re-read the",
+              "account to know the final supply."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_no",
+            "docs": [
+              "See [`Self::q_yes`]."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketCreated",
+      "docs": [
+        "Emitted once per successful `create_market`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The new market PDA."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "docs": [
+              "Who created it and paid the seed."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "resolver",
+            "docs": [
+              "Stored verbatim; unused in this phase."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "collateral_mint",
+            "docs": [
+              "The market's collateral mint (D3)."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "vault",
+            "docs": [
+              "The market's collateral vault token account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "question_hash",
+            "docs": [
+              "SHA-256 of the question bytes — the third market PDA seed."
+            ],
+            "type": {
+              "array": [
+                "u8",
+                32
+              ]
+            }
+          },
+          {
+            "name": "b",
+            "docs": [
+              "LMSR liquidity parameter, base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "seed_amount",
+            "docs": [
+              "`lmsr::cost(0, 0, b)`, the amount actually moved into the vault."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "created_at",
+            "docs": [
+              "`Clock::unix_timestamp` at creation."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "close_time",
+            "docs": [
+              "When trading stops and `close_market` may be cranked."
+            ],
+            "type": "i64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketResolved",
+      "docs": [
+        "Emitted once per successful `resolve_market`."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market that transitioned to `Resolved`."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "resolver",
+            "docs": [
+              "The key that resolved it — equal to `market.resolver` by construction,",
+              "emitted so an indexer need not join against the market account."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "winning_outcome",
+            "docs": [
+              "The side that won. Winning shares redeem 1:1 (T08)."
+            ],
+            "type": {
+              "defined": {
+                "name": "Outcome"
+              }
+            }
+          },
+          {
+            "name": "resolved_at",
+            "docs": [
+              "`Clock::unix_timestamp` when resolution landed."
+            ],
+            "type": "i64"
+          },
+          {
+            "name": "q_yes",
+            "docs": [
+              "Final LMSR state, frozen at resolution."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_no",
+            "docs": [
+              "See [`Self::q_yes`]."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "MarketStatus",
+      "docs": [
+        "Lifecycle of a market. Every instruction validates it (plan §2.3).",
+        "",
+        "The only legal transitions are `Open → Closed → Resolved`. Nothing moves a",
+        "market backwards."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Open"
+          },
+          {
+            "name": "Closed"
+          },
+          {
+            "name": "Resolved"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Outcome",
+      "docs": [
+        "Which side of the binary market a share or a trade refers to.",
+        "",
+        "This is the program's own type, not `lmsr::Outcome`: the LMSR crate is",
+        "`no_std` and Anchor-free by design, so it cannot derive Anchor's",
+        "serialisation traits. The two are converted at the boundary with the",
+        "`From` impls below."
+      ],
+      "type": {
+        "kind": "enum",
+        "variants": [
+          {
+            "name": "Yes"
+          },
+          {
+            "name": "No"
+          }
+        ]
+      }
+    },
+    {
+      "name": "Redeemed",
+      "docs": [
+        "Emitted on every successful redemption, including a zero-payout one.",
+        "",
+        "`winning_shares` and `losing_shares` are the pre-clear snapshot, so an",
+        "indexer can reconstruct what the holder had without reading an account that",
+        "no longer exists."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market that was redeemed against."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "The position holder and rent recipient."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "winning_outcome",
+            "docs": [
+              "The side that won, per `resolve_market`."
+            ],
+            "type": {
+              "defined": {
+                "name": "Outcome"
+              }
+            }
+          },
+          {
+            "name": "winning_shares",
+            "docs": [
+              "Winning-side shares held immediately before the position was cleared."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "losing_shares",
+            "docs": [
+              "Losing-side shares held immediately before the position was cleared.",
+              "These paid nothing."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "payout",
+            "docs": [
+              "Collateral base units transferred out of the vault. Equals",
+              "`winning_shares` (1:1) and is `0` for a pure loser."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "position_closed",
+            "docs": [
+              "Always `true` in this version — the `UserPosition` PDA is closed and its",
+              "rent returned to `owner`. Emitted explicitly so an indexer does not have",
+              "to infer it from program version."
+            ],
+            "type": "bool"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SharesBought",
+      "docs": [
+        "Emitted on every successful `buy_shares`.",
+        "",
+        "Carries the full pre- and post-trade LMSR state so an indexer can reprice the",
+        "market at any point in its history without replaying account snapshots, and",
+        "both a marginal and an effective price so the trade's impact is visible",
+        "directly."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market traded against."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "buyer",
+            "docs": [
+              "Who bought, and who owns the credited position."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "outcome",
+            "docs": [
+              "Which side was bought."
+            ],
+            "type": {
+              "defined": {
+                "name": "Outcome"
+              }
+            }
+          },
+          {
+            "name": "collateral_in",
+            "docs": [
+              "Collateral base units moved into the vault. **Exactly the",
+              "`usdc_amount` argument** — this instruction never re-prices the quote."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "shares_out",
+            "docs": [
+              "Share base units credited, from [`lmsr::shares_for_cost`] (floored)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "avg_price_paid",
+            "docs": [
+              "`collateral_in · UNIT / shares_out`, floored — the effective price paid",
+              "per share, on the same scale as [`Self::price_yes_after`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_yes_before",
+            "docs": [
+              "`market.q_yes` immediately before the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_no_before",
+            "docs": [
+              "`market.q_no` immediately before the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_yes_after",
+            "docs": [
+              "`market.q_yes` immediately after the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_no_after",
+            "docs": [
+              "`market.q_no` immediately after the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "price_yes_after",
+            "docs": [
+              "Marginal YES price after the trade, `UNIT`-scaled (`500_000` == `0.5`).",
+              "The NO price is `UNIT − price_yes_after`, exactly."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "position_yes_shares",
+            "docs": [
+              "The buyer's YES holding after the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "position_no_shares",
+            "docs": [
+              "The buyer's NO holding after the trade."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SharesSold",
+      "docs": [
+        "Emitted on every successful `sell_shares`.",
+        "",
+        "The exact mirror of",
+        "[`SharesBought`](super::buy_shares::SharesBought), so an indexer can treat",
+        "the two as one stream of state transitions."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market traded against."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "seller",
+            "docs": [
+              "Who sold, and whose position was debited."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "outcome",
+            "docs": [
+              "Which side was sold."
+            ],
+            "type": {
+              "defined": {
+                "name": "Outcome"
+              }
+            }
+          },
+          {
+            "name": "shares_in",
+            "docs": [
+              "Share base units burned from the position and removed from `q`."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "collateral_out",
+            "docs": [
+              "Collateral base units moved out of the vault, from",
+              "[`lmsr::sell_return`] (floored)."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "avg_price_received",
+            "docs": [
+              "`collateral_out · UNIT / shares_in`, floored — the effective price",
+              "received per share, on the same scale as [`Self::price_yes_after`]."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_yes_before",
+            "docs": [
+              "`market.q_yes` immediately before the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_no_before",
+            "docs": [
+              "`market.q_no` immediately before the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_yes_after",
+            "docs": [
+              "`market.q_yes` immediately after the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "q_no_after",
+            "docs": [
+              "`market.q_no` immediately after the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "price_yes_after",
+            "docs": [
+              "Marginal YES price after the trade, `UNIT`-scaled. The NO price is",
+              "`UNIT − price_yes_after`, exactly."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "position_yes_shares",
+            "docs": [
+              "The seller's YES holding after the trade."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "position_no_shares",
+            "docs": [
+              "The seller's NO holding after the trade."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "UserPosition",
+      "docs": [
+        "One user's holdings in one market (plan §2.1, D2). PDA, seeds",
+        "`[POSITION_SEED, market, owner]`.",
+        "",
+        "**Internal accounting only.** There are no SPL outcome mints, so these",
+        "shares are not transferable and not composable with other programs. That is",
+        "a deliberate, frozen decision (D2); the migration path, if it is ever",
+        "wanted, is to mint SPL tokens against the same `q_yes`/`q_no` accounting",
+        "without touching the LMSR core.",
+        "",
+        "Share counts are 6-decimal base units, the same unit as collateral — which",
+        "is what makes T08's winning-share redemption a straight 1:1 mapping."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market this position belongs to."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "owner",
+            "docs": [
+              "The owner. Only this key may sell or redeem."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "yes_shares",
+            "docs": [
+              "YES shares held, base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "no_shares",
+            "docs": [
+              "NO shares held, base units."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "bump",
+            "docs": [
+              "Bump for this PDA."
+            ],
+            "type": "u8"
+          }
+        ]
+      }
+    }
+  ],
+  "constants": [
+    {
+      "name": "MARKET_SEED",
+      "docs": [
+        "Seed prefix for the [`Market`](crate::state::Market) PDA.",
+        "",
+        "Full seeds: `[MARKET_SEED, creator.key(), question_hash]`.",
+        "Including the creator and the question hash lets the same creator run many",
+        "markets and keeps two creators asking the same question from colliding."
+      ],
+      "type": "bytes",
+      "value": "[109, 97, 114, 107, 101, 116]"
+    },
+    {
+      "name": "POSITION_SEED",
+      "docs": [
+        "Seed prefix for a [`UserPosition`](crate::state::UserPosition) PDA.",
+        "",
+        "Full seeds: `[POSITION_SEED, market.key(), owner.key()]` — one position",
+        "account per (market, user) pair, per `docs/DESIGN_DECISIONS.md` D2."
+      ],
+      "type": "bytes",
+      "value": "[112, 111, 115, 105, 116, 105, 111, 110]"
+    },
+    {
+      "name": "VAULT_SEED",
+      "docs": [
+        "Seed prefix for the market's collateral vault (an SPL token account owned",
+        "by the market PDA).",
+        "",
+        "Full seeds: `[VAULT_SEED, market.key()]`."
+      ],
+      "type": "bytes",
+      "value": "[118, 97, 117, 108, 116]"
+    }
+  ]
+}

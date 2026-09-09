@@ -68,22 +68,66 @@ export const api = {
   listMarkets: (groupId: string) =>
     request<{ markets: MarketView[] }>(`/api/groups/${groupId}/markets`),
 
+  /**
+   * Create a market on chain. Slow by web standards — it submits a Solana
+   * transaction and waits for confirmation, so devnet latency (600–2,000 ms,
+   * occasionally much worse) lands directly on this call.
+   */
   createMarket: (
     groupId: string,
-    input: { title: string; description?: string; expiresAt: number },
+    input: {
+      title: string;
+      description?: string;
+      expiresAt: number;
+      /** LMSR liquidity in base units. Defaults to the program minimum. */
+      b?: number;
+    },
   ) =>
-    request<{ market: MarketView }>(`/api/groups/${groupId}/markets`, {
-      method: "POST",
-      body: JSON.stringify(input),
-    }),
+    request<{ market: MarketView; signature: string; seedAmount: string }>(
+      `/api/groups/${groupId}/markets`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
 
+  /** `marketId` is the market PDA everywhere below. */
   getMarket: (marketId: string) =>
     request<{ market: MarketView }>(`/api/markets/${marketId}`),
 
-  placeBet: (marketId: string, input: { side: Side; amount: number }) =>
-    request<{ market: MarketView; balance: number }>(
-      `/api/markets/${marketId}/bet`,
+  /**
+   * What a trade would give, without doing it.
+   *
+   * Simulated against the real program, so the number matches what the trade
+   * will actually produce rather than a JavaScript approximation of the LMSR.
+   * `amount` is base units as a string: collateral for a buy, shares for a sell.
+   */
+  quote: (
+    marketId: string,
+    input: { side: Side; action: "buy" | "sell"; amount: string },
+  ) =>
+    request<{ received: string; avgPrice: string }>(
+      `/api/markets/${marketId}/quote`,
       { method: "POST", body: JSON.stringify(input) },
+    ),
+
+  /** Buy or sell outcome shares. Replaces the old parimutuel `placeBet`. */
+  trade: (
+    marketId: string,
+    input: {
+      side: Side;
+      action: "buy" | "sell";
+      amount: string;
+      slippage?: number;
+    },
+  ) =>
+    request<{ signature: string; received: string; market: MarketView }>(
+      `/api/markets/${marketId}/trade`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+
+  /** Claim a resolved position: winners 1:1, losers zero but still cleared. */
+  redeem: (marketId: string) =>
+    request<{ signature: string; market: MarketView }>(
+      `/api/markets/${marketId}/redeem`,
+      { method: "POST" },
     ),
 
   resolveMarket: (marketId: string, input: { imageDataUrl: string }) =>
@@ -92,8 +136,13 @@ export const api = {
       outcome: Side;
       description: string;
       faceMatch: { match: boolean; confidence: number };
+      signature: string;
     }>(`/api/markets/${marketId}/resolve`, {
       method: "POST",
       body: JSON.stringify(input),
     }),
+
+  /** On-chain wallet balances, for the header pill and trade validation. */
+  getBalance: () =>
+    request<{ sol: string; usdc: string; address: string }>("/api/wallet"),
 };

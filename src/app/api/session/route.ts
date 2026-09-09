@@ -16,11 +16,18 @@ import { verifySelfie } from "@/lib/integrations/world";
 import { createWallet } from "@/lib/integrations/privy";
 import type { User } from "@/types";
 
-/** Starting play-token balance for a new account. */
-const STARTING_BALANCE = 500;
-
 export async function GET() {
   const user = await getCurrentUser();
+  if (!user) return ok({ user: null });
+
+  // The demo users are seeded without a wallet, and a returning user from
+  // before wallets were Solana-shaped may still hold an EVM-looking address.
+  // Provision on read so nobody is left with an address that cannot sign.
+  if (!user.walletAddress || user.walletAddress.startsWith("0x")) {
+    const wallet = await createWallet(user.id);
+    const updated = db.updateUser(user.id, { walletAddress: wallet.address });
+    return ok({ user: updated ?? user });
+  }
   return ok({ user });
 }
 
@@ -53,18 +60,20 @@ export async function POST(req: Request) {
     return fail("Selfie verification failed", 422);
   }
 
-  // 2) Privy — auto-provision an embedded wallet.
-  const wallet = await createWallet(`pending_${body.phone}`);
+  // 2) Privy — auto-provision an embedded Solana wallet.
+  //    Keyed by the new user id so the address is stable across sign-ins;
+  //    keying it on the phone number would strand funds if the number changed.
+  const id = newId("u");
+  const wallet = await createWallet(id);
 
   const user: User = {
-    id: newId("u"),
+    id,
     name: body.name.trim(),
     phone: body.phone.trim(),
     avatarUrl: body.selfieDataUrl,
     walletAddress: wallet.address,
     worldId: verification.worldId,
     verified: true,
-    balance: STARTING_BALANCE,
     createdAt: Date.now(),
   };
   db.createUser(user);

@@ -1,11 +1,15 @@
 /**
- * /api/markets/[marketId] — a single market with its pool + bets.
+ * /api/markets/[marketId] — one market: off-chain metadata joined to the
+ * on-chain LMSR state the indexer has projected.
+ *
+ * `marketId` is the market PDA.
  */
 
 import { db } from "@/lib/store";
 import { fail, ok } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
 import { toMarketView } from "@/lib/markets";
+import { getChainMarket } from "@/lib/chain/projection";
 
 export async function GET(
   _req: Request,
@@ -23,5 +27,11 @@ export async function GET(
     return fail("Market not found", 404);
   }
 
-  return ok({ market: toMarketView(market) });
+  return ok({
+    market: toMarketView(
+      market,
+      getChainMarket(marketId),
+      user.walletAddress,
+    ),
+  });
 }

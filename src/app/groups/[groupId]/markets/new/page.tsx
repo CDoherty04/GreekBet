@@ -37,7 +37,7 @@ export default function NewMarketPage() {
         title,
         expiresAt: Date.now() + ms,
       });
-      router.replace(`/markets/${market.id}`);
+      router.replace(`/markets/${market.address}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setSubmitting(false);

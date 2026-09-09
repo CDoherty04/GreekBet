@@ -119,17 +119,20 @@ export default function GroupDetailPage() {
               ) : (
                 <div className="space-y-2">
                   {markets.map((m) => (
-                    <Card key={m.id}>
+                    <Card key={m.address}>
                       <p className="font-display text-base font-bold leading-snug tracking-wide">
                         {m.title}
                       </p>
                       <p className="mt-1 text-xs text-muted">
-                        {m.status === "resolved"
-                          ? "Resolved"
-                          : m.expiresAt > Date.now()
-                            ? "Live"
-                            : "Needs resolution"}{" "}
-                        · {m.bets.length} bet{m.bets.length === 1 ? "" : "s"}
+                        {!m.indexed
+                          ? "Confirming on chain"
+                          : m.status === "resolved"
+                            ? "Resolved"
+                            : m.expiresAt > Date.now()
+                              ? "Live"
+                              : "Needs resolution"}{" "}
+                        · {m.trades.length} trade
+                        {m.trades.length === 1 ? "" : "s"}
                       </p>
                     </Card>
                   ))}
@@ -184,7 +187,7 @@ export default function GroupDetailPage() {
             <p className="mt-1 text-sm text-muted">Create the first.</p>
           </Card>
         ) : (
-          markets.map((m) => <MarketCard key={m.id} market={m} />)
+          markets.map((m) => <MarketCard key={m.address} market={m} />)
         )}
       </div>
 
