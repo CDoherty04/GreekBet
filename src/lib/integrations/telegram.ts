@@ -1,30 +1,9 @@
 /**
- * Telegram — bot DMs + Gateway phone verification.
+ * Telegram Bot API — event DMs after the user taps Start once.
  *
- * Two APIs, same file:
- *   1. Gateway API — OTP to a phone number registered on Telegram.
- *   2. Bot API — event notifications after the user taps Start once.
- *
- * Tokens live in env (see `.env.example`). Missing Gateway token → OTP
- * falls through to an in-app stub so the demo still runs.
+ * Auth stays on Privy SMS. This module only sends notifications.
+ * Token: TELEGRAM_BOT_TOKEN (see `.env.example`).
  */
-
-export type VerifyChannel = "telegram" | "stub";
-
-interface GatewayOk {
-  ok: true;
-  result: {
-    request_id: string;
-    verification_status?: { status: string };
-  };
-}
-
-interface GatewayErr {
-  ok: false;
-  error?: string;
-}
-
-type GatewayResponse = GatewayOk | GatewayErr;
 
 interface BotOk<T> {
   ok: true;
@@ -40,33 +19,8 @@ function botToken(): string | undefined {
   return process.env.TELEGRAM_BOT_TOKEN?.trim() || undefined;
 }
 
-function gatewayToken(): string | undefined {
-  return process.env.TELEGRAM_GATEWAY_TOKEN?.trim() || undefined;
-}
-
 export function telegramBotConfigured(): boolean {
   return Boolean(botToken());
-}
-
-export function telegramGatewayConfigured(): boolean {
-  return Boolean(gatewayToken());
-}
-
-async function gateway<T extends GatewayResponse>(
-  method: string,
-  body: Record<string, unknown>,
-): Promise<T> {
-  const token = gatewayToken();
-  if (!token) throw new Error("TELEGRAM_GATEWAY_TOKEN is not set");
-  const res = await fetch(`https://gatewayapi.telegram.org/${method}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body),
-  });
-  return (await res.json()) as T;
 }
 
 async function botApi<T>(
@@ -81,41 +35,6 @@ async function botApi<T>(
     body: JSON.stringify(body ?? {}),
   });
   return (await res.json()) as BotOk<T> | BotErr;
-}
-
-/** Send a verification code to a phone via Telegram Gateway. */
-export async function sendGatewayCode(
-  phone: string,
-): Promise<{ requestId: string } | { error: string }> {
-  try {
-    const data = await gateway<GatewayResponse>("sendVerificationMessage", {
-      phone_number: phone,
-      code_length: 6,
-      ttl: 120,
-    });
-    if (!data.ok) return { error: data.error ?? "Telegram could not text that number" };
-    return { requestId: data.result.request_id };
-  } catch (e) {
-    return { error: e instanceof Error ? e.message : "Telegram Gateway failed" };
-  }
-}
-
-/** Confirm a Gateway-generated code. */
-export async function checkGatewayCode(
-  requestId: string,
-  code: string,
-): Promise<{ valid: boolean; error?: string }> {
-  try {
-    const data = await gateway<GatewayResponse>("checkVerificationStatus", {
-      request_id: requestId,
-      code,
-    });
-    if (!data.ok) return { valid: false, error: data.error ?? "Could not check code" };
-    const status = data.result.verification_status?.status;
-    return { valid: status === "code_valid", error: status === "code_valid" ? undefined : status };
-  } catch (e) {
-    return { valid: false, error: e instanceof Error ? e.message : "Telegram Gateway failed" };
-  }
 }
 
 /** Post a chat message from the bot. */

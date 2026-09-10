@@ -1,22 +1,21 @@
 /**
- * /api/groups/[groupId]/markets — list markets in a group, or create one.
+ * /api/groups/[groupId]/markets — list markets, or prepare a create-market tx.
  *
- * Creating a market is an **on-chain** action: it initialises a PDA, opens a
- * vault, and transfers the creator's LMSR subsidy (`b·ln2`) into it. The
- * off-chain row written afterwards is metadata only — the question text and
- * which group it belongs to, neither of which the program knows about.
+ * Creating a market builds an **unsigned** Solana transaction. The client
+ * signs and sends it with Privy, then POSTs `/markets/confirm` to store
+ * off-chain metadata.
  */
+
+import { PublicKey } from "@solana/web3.js";
 
 import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
 import { toMarketView } from "@/lib/markets";
-import { createMarket } from "@/lib/chain/actions";
-import { getChainMarket, projection } from "@/lib/chain/projection";
-import { keypairFor, resolverKeypair } from "@/lib/chain/wallet";
+import { buildCreateMarketTx } from "@/lib/chain/actions";
+import { projection } from "@/lib/chain/projection";
+import { resolverKeypair } from "@/lib/chain/wallet";
 import { B_MAX, B_MIN, DEFAULT_B } from "@/lib/chain/config";
-import { notifyNewEvent, requestOrigin } from "@/lib/integrations/telegram";
-import type { Market } from "@/types";
 
 export async function GET(
   _req: Request,
@@ -31,7 +30,6 @@ export async function GET(
     return fail("Group not found", 404);
   }
 
-  // One projection read for the whole list rather than per market.
   const chain = projection();
   const markets = db
     .listMarketsForGroup(groupId)
@@ -43,7 +41,6 @@ interface CreateMarketBody {
   title: string;
   description?: string;
   expiresAt: number;
-  /** LMSR liquidity in base units. Defaults to the program minimum. */
   b?: number;
 }
 
@@ -53,6 +50,7 @@ export async function POST(
 ) {
   const user = await getCurrentUser();
   if (!user) return fail("Not signed in", 401);
+  if (!user.walletAddress) return fail("No wallet linked", 400);
 
   const { groupId } = await ctx.params;
   const group = db.getGroup(groupId);
@@ -63,7 +61,6 @@ export async function POST(
   const body = await readJson<CreateMarketBody>(req);
   const title = body?.title?.trim();
   if (!title) return fail("Market title is required");
-  // The question is a PDA seed, and the program caps it at 200 UTF-8 bytes.
   if (Buffer.byteLength(title, "utf8") > 200) {
     return fail("Question is too long (200 bytes max)");
   }
@@ -77,67 +74,31 @@ export async function POST(
     typeof body?.expiresAt === "number" && body.expiresAt > Date.now()
       ? body.expiresAt
       : Date.now() + 1000 * 60 * 60 * 24;
-
-  // The program works in unix seconds and rejects a close time in the past.
   const closeTime = Math.floor(expiresAt / 1000);
 
   try {
-    const created = await createMarket({
-      creator: keypairFor(user.id),
+    const built = await buildCreateMarketTx({
+      creator: new PublicKey(user.walletAddress),
       resolver: resolverKeypair().publicKey,
       question: title,
       closeTime,
       b,
     });
 
-    const market: Market = {
-      address: created.market,
-      groupId,
+    return ok({
+      transaction: built.transaction,
+      marketAddress: built.market,
+      vault: built.vault,
+      seedAmount: built.seedAmount,
       title,
       description: body?.description?.trim() || undefined,
-      createdBy: user.id,
-      createdAt: Date.now(),
-      createSignature: created.signature,
-    };
-    db.createMarket(market);
-
-    const chatIds = group.memberIds
-      .filter((id) => id !== user.id)
-      .map((id) => db.getUser(id)?.telegramChatId)
-      .filter((id): id is string => Boolean(id));
-    void notifyNewEvent({
-      chatIds,
-      groupName: group.name,
-      title,
-      url: `${requestOrigin(req)}/markets/${created.market}`,
+      expiresAt,
     });
-
-    // The indexer may not have seen it yet; the view reports `indexed: false`
-    // and the UI shows it as pending rather than inventing prices.
-    return ok(
-      {
-        market: toMarketView(
-          market,
-          getChainMarket(created.market),
-          user.walletAddress,
-        ),
-        signature: created.signature,
-        seedAmount: created.seedAmount,
-      },
-      { status: 201 },
-    );
   } catch (err) {
     return fail(onChainMessage(err), 502);
   }
 }
 
-/**
- * Surface the program's own error rather than a generic failure.
- *
- * The two most common are worth naming: the creator has no collateral for the
- * subsidy, or no SOL for rent and fees. Both are ordinary on devnet and are
- * useless as "Transaction failed".
- */
 export function onChainMessage(err: unknown): string {
   const msg = err instanceof Error ? err.message : String(err);
   if (msg.includes("insufficient funds") || msg.includes("0x1")) {

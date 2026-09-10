@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Barlow_Condensed, DM_Sans } from "next/font/google";
 import "./globals.css";
-import { SessionProvider } from "@/components/SessionProvider";
+import { AppProviders } from "@/components/AppProviders";
 import { MobileFrame } from "@/components/MobileFrame";
 
 const dmSans = DM_Sans({
@@ -31,9 +31,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
   return (
     <html lang="en" className={`${dmSans.variable} ${barlow.variable}`}>
       <body className="antialiased">
-        <SessionProvider>
+        <AppProviders>
           <MobileFrame>{children}</MobileFrame>
-        </SessionProvider>
+        </AppProviders>
       </body>
     </html>
   );

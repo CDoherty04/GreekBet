@@ -1,12 +1,10 @@
 "use client";
 
 /**
- * SessionProvider — makes the current user available to every screen.
+ * SessionProvider — Privy auth + app profile.
  *
- * It no longer tracks a balance: money lives on chain, and `BalancePill` reads
- * it from the wallet directly. Caching it here would mean two sources of truth
- * for the same number, and the cached one would be wrong the moment a trade
- * settled.
+ * Privy holds the SMS session and Solana wallet. This provider loads the
+ * Groupbet user row (name / selfie / World) once Privy reports authenticated.
  */
 
 import {
@@ -17,59 +15,80 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { api } from "@/lib/api";
+import { usePrivy } from "@privy-io/react-auth";
+import { api, setAccessTokenProvider } from "@/lib/api";
 import type { User } from "@/types";
 
 interface SessionValue {
   user: User | null;
   loading: boolean;
-  /** Re-fetch the session from the server. */
   refresh: () => Promise<void>;
-  /** Optimistically replace the user (e.g. after signup or a balance change). */
   setUser: (user: User | null) => void;
 }
 
 const SessionContext = createContext<SessionValue | null>(null);
 
 export function SessionProvider({ children }: { children: React.ReactNode }) {
+  const { ready, authenticated, getAccessToken } = usePrivy();
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
+  useEffect(() => {
+    setAccessTokenProvider(async () => {
+      if (!authenticated) return null;
+      try {
+        return await getAccessToken();
+      } catch {
+        return null;
+      }
+    });
+    return () => setAccessTokenProvider(null);
+  }, [authenticated, getAccessToken]);
+
   const refresh = useCallback(async () => {
+    if (!ready) return;
+    if (!authenticated) {
+      setUser(null);
+      setLoading(false);
+      return;
+    }
     try {
-      const { user } = await api.getSession();
-      setUser(user);
+      const { user: next } = await api.getSession();
+      setUser(next);
     } catch {
       setUser(null);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [ready, authenticated]);
 
   useEffect(() => {
-    // Load the session once on mount (syncs React state with the server).
-    // eslint-disable-next-line react-hooks/set-state-in-effect
+    if (!ready) return;
+    setLoading(true);
     void refresh();
-  }, [refresh]);
+  }, [ready, authenticated, refresh]);
+
+  // Expose logout helper via window-free pattern: SessionProvider consumers
+  // call api.signOut + privy.logout from UI. Keep logout available through
+  // a stable refresh after Privy logout by clearing user when unauthenticated.
+
+  useEffect(() => {
+    if (ready && !authenticated && user) setUser(null);
+  }, [ready, authenticated, user, setUser]);
 
   return (
-    <SessionContext.Provider value={{ user, loading, refresh, setUser }}>
+    <SessionContext.Provider value={{ user, loading: loading || !ready, refresh, setUser }}>
       {children}
     </SessionContext.Provider>
   );
 }
 
-/** Access the session anywhere below the provider. */
 export function useSession(): SessionValue {
   const ctx = useContext(SessionContext);
   if (!ctx) throw new Error("useSession must be used within a SessionProvider");
   return ctx;
 }
 
-/**
- * Redirect to onboarding when there's no signed-in user. Returns the session
- * so screens can render a loading state while it resolves.
- */
 export function useRequireUser(): SessionValue {
   const session = useSession();
   const router = useRouter();

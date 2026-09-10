@@ -3,16 +3,12 @@
 /**
  * On-chain balance pill.
  *
- * Shows real USDC, not an internal play-token balance — trades settle against
- * a Solana vault now, so a second in-app number would diverge the moment
- * anything moved.
- *
- * It also warns when the wallet has no SOL. That failure is worth surfacing
- * early: without SOL for fees and rent, every action fails with a message from
- * deep inside the runtime that never mentions SOL.
+ * Shows collateral balance for the signed-in Privy wallet. When empty, it
+ * auto-claims a one-shot devnet top-up from the project treasury so new
+ * accounts can create markets without a manual faucet step.
  */
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSession } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 import { formatUnits } from "@/lib/chain/config";
@@ -22,21 +18,33 @@ export function BalancePill() {
   const [balance, setBalance] = useState<{ sol: string; usdc: string } | null>(
     null,
   );
+  const funding = useRef(false);
 
   useEffect(() => {
     if (!user) return;
     let cancelled = false;
-    const load = () =>
-      api
-        .getBalance()
-        .then((b) => {
-          if (!cancelled) setBalance({ sol: b.sol, usdc: b.usdc });
-        })
-        .catch(() => {});
+
+    const load = async () => {
+      try {
+        let b = await api.getBalance();
+        const empty = b.sol === "0" || b.usdc === "0";
+        if (empty && !funding.current) {
+          funding.current = true;
+          try {
+            await api.fundWallet();
+            b = await api.getBalance();
+          } catch {
+            /* treasury may be dry — pill stays at $0 */
+          }
+        }
+        if (!cancelled) setBalance({ sol: b.sol, usdc: b.usdc });
+      } catch {
+        /* ignore */
+      }
+    };
+
     void load();
-    // Balances change as a side effect of trading, and the RPC read is cheap
-    // next to a trade, so poll rather than threading invalidation everywhere.
-    const t = setInterval(load, 15000);
+    const t = setInterval(() => void load(), 15000);
     return () => {
       cancelled = true;
       clearInterval(t);

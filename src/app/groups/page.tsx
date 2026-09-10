@@ -31,13 +31,9 @@ export default function GroupsPage() {
         right={
           <div className="flex items-center gap-2">
             <BalancePill />
-            <Link
-              href="/debug"
-              className="font-display text-[10px] font-bold tracking-[0.16em] uppercase text-muted hover:text-brand"
-            >
-              Debug
+            <Link href="/profile" aria-label="Profile">
+              <Avatar />
             </Link>
-            <Avatar />
           </div>
         }
       />

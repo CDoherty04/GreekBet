@@ -1,19 +1,17 @@
 /**
- * Fund a devnet wallet so it can create markets and trade.
+ * Fund a Privy (or any) Solana wallet on **devnet**.
  *
  *   npm run fund -- <wallet-address>
  *
- * Sends SOL for fees and rent, and mints test collateral. Both are needed and
- * they fail differently: with no SOL every transaction dies inside the runtime
- * with an error that never mentions SOL, and with no collateral the trade
- * itself reverts.
+ * Two wallets are involved:
  *
- * Collateral is the 6-decimal test mint whose authority the treasury holds.
- * Circle's devnet USDC cannot be minted by us — its faucet is reCAPTCHA-gated,
- * so an unattended top-up is impossible. The program only requires
- * `decimals == 6` and stores the mint per market, so the test mint behaves
- * identically; point `NEXT_PUBLIC_COLLATERAL_MINT` at Circle's if you have
- * some and want the real thing.
+ * 1. **Target** — the address you pass (your Privy embedded wallet from Profile).
+ * 2. **Treasury** — local keypair at `.data/treasury.json` that pays SOL and
+ *    (usually) mints test collateral.
+ *
+ * If the configured mint's authority is not the treasury, this script creates
+ * a fresh 6-decimal mint under `.data/collateral-mint.json` and prints the
+ * `NEXT_PUBLIC_COLLATERAL_MINT=` line to put in `.env.local`.
  */
 
 import * as fs from "fs";
@@ -31,47 +29,157 @@ import {
 } from "@solana/web3.js";
 import {
   createAssociatedTokenAccountInstruction,
+  createMint,
   createMintToInstruction,
   getAccount,
   getAssociatedTokenAddress,
+  getMint,
 } from "@solana/spl-token";
 
 const RPC = process.env.NEXT_PUBLIC_SOLANA_RPC ?? "https://api.devnet.solana.com";
-const MINT = new PublicKey(
-  process.env.NEXT_PUBLIC_COLLATERAL_MINT ??
-    "5XWYAVBaM34pJx5LT9pNS8TdVJAb8ieHzqD9twZZ7zaG",
-);
-
+const PROJECT_TREASURY = path.join(process.cwd(), ".data", "treasury.json");
+const PROJECT_MINT = path.join(process.cwd(), ".data", "collateral-mint.json");
 const SOL_TO_SEND = 0.5;
 const COLLATERAL_TO_MINT = 100_000_000n; // 100 units, 6 decimals
 
-function treasury(): Keypair {
-  const file =
-    process.env.SOLANA_KEYPAIR ??
-    path.join(os.homedir(), ".config", "solana", "id.json");
-  const secret = JSON.parse(fs.readFileSync(file, "utf8")) as number[];
-  return Keypair.fromSecretKey(Uint8Array.from(secret));
+function loadOrCreateTreasury(): { keypair: Keypair; path: string; created: boolean } {
+  const candidates = [
+    process.env.SOLANA_KEYPAIR,
+    path.join(os.homedir(), ".config", "solana", "id.json"),
+    PROJECT_TREASURY,
+  ].filter((p): p is string => Boolean(p));
+
+  for (const file of candidates) {
+    try {
+      const secret = JSON.parse(fs.readFileSync(file, "utf8")) as number[];
+      return {
+        keypair: Keypair.fromSecretKey(Uint8Array.from(secret)),
+        path: file,
+        created: false,
+      };
+    } catch {
+      /* try next */
+    }
+  }
+
+  fs.mkdirSync(path.dirname(PROJECT_TREASURY), { recursive: true });
+  const kp = Keypair.generate();
+  fs.writeFileSync(
+    PROJECT_TREASURY,
+    JSON.stringify(Array.from(kp.secretKey)),
+    "utf8",
+  );
+  return { keypair: kp, path: PROJECT_TREASURY, created: true };
+}
+
+function readSavedMint(): PublicKey | null {
+  try {
+    const raw = JSON.parse(fs.readFileSync(PROJECT_MINT, "utf8")) as {
+      mint: string;
+    };
+    return new PublicKey(raw.mint);
+  } catch {
+    return null;
+  }
+}
+
+function saveMint(mint: PublicKey, authority: PublicKey): void {
+  fs.mkdirSync(path.dirname(PROJECT_MINT), { recursive: true });
+  fs.writeFileSync(
+    PROJECT_MINT,
+    JSON.stringify(
+      {
+        mint: mint.toBase58(),
+        authority: authority.toBase58(),
+        decimals: 6,
+      },
+      null,
+      2,
+    ),
+    "utf8",
+  );
+}
+
+async function ensureMint(
+  conn: Connection,
+  treasury: Keypair,
+): Promise<{ mint: PublicKey; created: boolean }> {
+  const envMint = process.env.NEXT_PUBLIC_COLLATERAL_MINT;
+  if (envMint) {
+    const mint = new PublicKey(envMint);
+    try {
+      const info = await getMint(conn, mint);
+      if (info.mintAuthority?.equals(treasury.publicKey)) {
+        return { mint, created: false };
+      }
+      console.warn(
+        `NEXT_PUBLIC_COLLATERAL_MINT=${envMint} is not mintable by this treasury.` +
+          `\nCreating a project mint instead (or use Circle faucet for that mint).`,
+      );
+    } catch {
+      console.warn(`Could not read mint ${envMint}; creating a project mint.`);
+    }
+  }
+
+  const saved = readSavedMint();
+  if (saved) {
+    try {
+      const info = await getMint(conn, saved);
+      if (info.mintAuthority?.equals(treasury.publicKey)) {
+        return { mint: saved, created: false };
+      }
+    } catch {
+      /* recreate below */
+    }
+  }
+
+  console.log("Creating 6-decimal test collateral mint (treasury = mint authority)…");
+  const mint = await createMint(
+    conn,
+    treasury,
+    treasury.publicKey,
+    null,
+    6,
+  );
+  saveMint(mint, treasury.publicKey);
+  return { mint, created: true };
 }
 
 async function main() {
   const target = process.argv[2];
   if (!target) {
     console.error("usage: npm run fund -- <wallet-address>");
+    console.error(
+      "\nPass the Solana address from Profile (your Privy embedded wallet).",
+    );
     process.exit(1);
   }
 
   const owner = new PublicKey(target);
-  const payer = treasury();
+  const { keypair: payer, path: treasuryPath, created } =
+    loadOrCreateTreasury();
   const conn = new Connection(RPC, "confirmed");
 
-  console.log("treasury", payer.publicKey.toBase58());
-  console.log("funding ", owner.toBase58());
+  console.log("treasury file", treasuryPath);
+  console.log("treasury     ", payer.publicKey.toBase58());
+  console.log("funding      ", owner.toBase58());
+
+  if (created) {
+    console.error(
+      `\nCreated a new treasury at ${treasuryPath}.` +
+        `\nIt has 0 SOL. Get free SOL once, then re-run this command:` +
+        `\n  https://faucet.solana.com` +
+        `\n  address: ${payer.publicKey.toBase58()}`,
+    );
+    process.exit(2);
+  }
 
   const treasurySol = await conn.getBalance(payer.publicKey);
   if (treasurySol < SOL_TO_SEND * LAMPORTS_PER_SOL) {
     console.error(
       `\nThe treasury only holds ${treasurySol / LAMPORTS_PER_SOL} SOL.` +
-        `\nTop it up at https://faucet.solana.com — address above.`,
+        `\nTop it up at https://faucet.solana.com` +
+        `\n  address: ${payer.publicKey.toBase58()}`,
     );
     process.exit(2);
   }
@@ -97,7 +205,10 @@ async function main() {
   }
 
   // --- collateral ------------------------------------------------------
-  const ata = await getAssociatedTokenAddress(MINT, owner, true);
+  const { mint, created: mintCreated } = await ensureMint(conn, payer);
+  console.log("collateral   ", mint.toBase58());
+
+  const ata = await getAssociatedTokenAddress(mint, owner, true);
   const ixs = [];
 
   let exists = true;
@@ -108,40 +219,35 @@ async function main() {
   }
   if (!exists) {
     ixs.push(
-      createAssociatedTokenAccountInstruction(payer.publicKey, ata, owner, MINT),
+      createAssociatedTokenAccountInstruction(payer.publicKey, ata, owner, mint),
     );
   }
   ixs.push(
-    createMintToInstruction(MINT, ata, payer.publicKey, COLLATERAL_TO_MINT),
+    createMintToInstruction(mint, ata, payer.publicKey, COLLATERAL_TO_MINT),
   );
 
-  try {
-    const sig = await sendAndConfirmTransaction(
-      conn,
-      new Transaction().add(...ixs),
-      [payer],
-      { commitment: "confirmed" },
-    );
-    console.log(
-      `  collateral minted ${Number(COLLATERAL_TO_MINT) / 1e6} — ${sig}`,
-    );
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    if (msg.includes("owner does not match") || msg.includes("MintAuthority")) {
-      console.error(
-        `\nThe treasury does not hold the mint authority for ${MINT.toBase58()}.` +
-          `\nThat is expected for Circle's USDC — it can only come from their faucet.`,
-      );
-      process.exit(2);
-    }
-    throw err;
-  }
+  const sig = await sendAndConfirmTransaction(
+    conn,
+    new Transaction().add(...ixs),
+    [payer],
+    { commitment: "confirmed" },
+  );
+  console.log(
+    `  collateral minted ${Number(COLLATERAL_TO_MINT) / 1e6} — ${sig}`,
+  );
 
   const final = await getAccount(conn, ata);
   console.log(
     `\nready: ${(await conn.getBalance(owner)) / LAMPORTS_PER_SOL} SOL, ` +
       `${Number(final.amount) / 1e6} collateral`,
   );
+
+  if (mintCreated || process.env.NEXT_PUBLIC_COLLATERAL_MINT !== mint.toBase58()) {
+    console.log(
+      `\nAdd this to .env.local and restart npm run dev:\n` +
+        `  NEXT_PUBLIC_COLLATERAL_MINT=${mint.toBase58()}`,
+    );
+  }
 }
 
 main().catch((err) => {

@@ -35,11 +35,9 @@ import type {
 import { priceToProb } from "@/lib/chain/config";
 import type { ChainMarket } from "@/lib/chain/projection";
 import { db } from "@/lib/store";
+import { formatProb, winningShares } from "@/lib/market-display";
 
-/** Human-friendly odds label, e.g. "62%". */
-export function formatProb(prob: number): string {
-  return `${Math.round(prob * 100)}%`;
-}
+export { formatProb, winningShares };
 
 /**
  * Join off-chain metadata to on-chain state.
@@ -129,14 +127,6 @@ function toTrade(t: ChainMarket["trades"][number]): Trade {
     collateral: t.collateral,
     shares: t.shares,
   };
-}
-
-/** Shares a user holds on the winning side, or "0". */
-export function winningShares(view: MarketView): string {
-  if (!view.outcome || !view.myPosition) return "0";
-  return view.outcome === "yes"
-    ? view.myPosition.yesShares
-    : view.myPosition.noShares;
 }
 
 export type { User };

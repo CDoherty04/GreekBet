@@ -1,4 +1,4 @@
-import { formatProb } from "@/lib/markets";
+import { formatProb } from "@/lib/market-display";
 import type { MarketPricing } from "@/types";
 
 /**

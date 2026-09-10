@@ -1,12 +1,5 @@
 /**
- * /api/markets/[marketId]/trade — buy or sell outcome shares.
- *
- * Replaces the old `/bet` endpoint. Under the parimutuel model a bet was a
- * ledger entry against an internal balance; here it is a real transaction
- * against an LMSR market maker, priced on a bonding curve, and a position can
- * be **sold back before resolution** rather than being locked in.
- *
- * `marketId` is the market PDA.
+ * /api/markets/[marketId]/trade — prepare an unsigned buy/sell for Privy.
  */
 
 import { PublicKey } from "@solana/web3.js";
@@ -14,19 +7,15 @@ import { PublicKey } from "@solana/web3.js";
 import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
-import { toMarketView } from "@/lib/markets";
-import { buyShares, sellShares } from "@/lib/chain/actions";
+import { buildBuySharesTx, buildSellSharesTx } from "@/lib/chain/actions";
 import { getChainMarket } from "@/lib/chain/projection";
-import { keypairFor } from "@/lib/chain/wallet";
 import { onChainMessage } from "@/app/api/groups/[groupId]/markets/route";
 import type { Side } from "@/types";
 
 interface TradeBody {
   side: Side;
   action: "buy" | "sell";
-  /** Base units, as a string. Collateral for a buy, shares for a sell. */
   amount: string;
-  /** Fraction, e.g. 0.01 for 1%. */
   slippage?: number;
 }
 
@@ -36,6 +25,7 @@ export async function POST(
 ) {
   const user = await getCurrentUser();
   if (!user) return fail("Not signed in", 401);
+  if (!user.walletAddress) return fail("No wallet linked", 400);
 
   const { marketId } = await ctx.params;
   const meta = db.getMarket(marketId);
@@ -48,8 +38,6 @@ export async function POST(
   if (!chain) {
     return fail("This market is not indexed yet — try again in a moment", 409);
   }
-  // Checked here purely for a readable message; the program enforces both
-  // independently and would reject the transaction regardless.
   if (chain.status !== "open") {
     return fail("This market is closed for trading", 409);
   }
@@ -80,18 +68,18 @@ export async function POST(
 
   try {
     const market = new PublicKey(marketId);
-    const trader = keypairFor(user.id);
+    const trader = new PublicKey(user.walletAddress);
 
     const result =
       body.action === "buy"
-        ? await buyShares({
+        ? await buildBuySharesTx({
             trader,
             market,
             outcome: body.side,
             collateral: amount,
             slippage,
           })
-        : await sellShares({
+        : await buildSellSharesTx({
             trader,
             market,
             outcome: body.side,
@@ -99,14 +87,9 @@ export async function POST(
             slippage,
           });
 
-    // The projection is rebuilt from the indexer's file, which lags the
-    // transaction by however long the indexer takes to see it. Returning the
-    // pre-trade view would make the UI look like nothing happened, so the
-    // signature is returned too and the client refetches.
     return ok({
-      signature: result.signature,
+      transaction: result.transaction,
       received: result.received,
-      market: toMarketView(meta, getChainMarket(marketId), user.walletAddress),
     });
   } catch (err) {
     return fail(onChainMessage(err), 502);

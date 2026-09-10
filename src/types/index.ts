@@ -32,23 +32,21 @@ export type MarketStatus = "open" | "closed" | "resolved";
 /**
  * A person.
  *
- * `walletAddress` is a real Solana address. Until Privy's Solana support is
- * wired up, the key is generated and held server-side — see
- * `src/lib/chain/wallet.ts` for why, and what that does and does not mean.
+ * `id` is the Privy user DID (`did:privy:…`). `walletAddress` is their Privy
+ * embedded Solana wallet — keys never touch this server.
  */
 export interface User {
   id: ID;
   name: string;
   phone: string;
   avatarUrl: string;
-  /** Base58 Solana address. */
+  /** Base58 Solana address (Privy embedded wallet). */
   walletAddress: string;
+  /** Telegram chat id after linking the bot (for event DMs). */
+  telegramChatId?: string;
+  telegramUsername?: string;
   worldId: string;
   verified: boolean;
-  /** Telegram @username, if the user linked their account. */
-  telegramUsername?: string;
-  /** Telegram chat id, used to DM the user from the bot. */
-  telegramChatId?: string;
   createdAt: number;
 }
 

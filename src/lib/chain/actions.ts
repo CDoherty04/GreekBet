@@ -1,8 +1,9 @@
 /**
  * The six market actions. **Server-only.**
  *
- * Each builds, signs and submits a transaction against the LMSR program and
- * returns the signature plus whatever the caller needs to update the UI.
+ * User-facing actions (create / buy / sell / redeem) **build** unsigned
+ * transactions for the client to sign with Privy. Resolver / close still
+ * sign with server-held keypairs.
  *
  * Amounts crossing this boundary are **base units as strings** (`bigint` where
  * arithmetic is needed). Shares reach 1e15 and a JSON number would silently
@@ -28,7 +29,13 @@ import {
 
 import { COLLATERAL_MINT, DEFAULT_B } from "./config";
 import { deriveMarket, derivePosition, deriveVault, questionHash } from "./pdas";
-import { connection, programFor, sendAndConfirm } from "./program";
+import {
+  buildUnsignedTransaction,
+  connection,
+  programFor,
+  readOnlyProgram,
+  sendAndConfirm,
+} from "./program";
 import { quoteBuy, quoteSell } from "./quote";
 
 export type Outcome = "yes" | "no";
@@ -48,7 +55,7 @@ const computeBudget = () =>
 /** The user's collateral ATA, creating it if this is their first interaction. */
 async function ensureAta(
   owner: PublicKey,
-  payer: Keypair,
+  payer: PublicKey,
   mint: PublicKey,
 ): Promise<{ address: PublicKey; ix: TransactionInstruction | null }> {
   const address = await getAssociatedTokenAddress(mint, owner, true);
@@ -59,7 +66,7 @@ async function ensureAta(
     return {
       address,
       ix: createAssociatedTokenAccountInstruction(
-        payer.publicKey,
+        payer,
         address,
         owner,
         mint,
@@ -70,36 +77,34 @@ async function ensureAta(
   }
 }
 
-export interface CreateMarketResult {
+export interface CreateMarketTx {
+  transaction: string;
   market: string;
   vault: string;
-  signature: string;
   seedAmount: string;
 }
 
 /**
- * Create a market and seed its vault.
+ * Build (unsigned) create-market + seed vault tx for the creator to sign.
  *
  * The creator deposits `C(0,0) = b·ln2` — the LMSR's maximum possible subsidy.
- * That is real money they can lose: it is what pays winners when the market
- * moves against the house. At the default `b` of 10 USDC that is ~6.93 USDC.
  */
-export async function createMarket(input: {
-  creator: Keypair;
+export async function buildCreateMarketTx(input: {
+  creator: PublicKey;
   resolver: PublicKey;
   question: string;
   closeTime: number;
   b?: number;
   mint?: PublicKey;
-}): Promise<CreateMarketResult> {
+}): Promise<CreateMarketTx> {
   const mint = input.mint ?? COLLATERAL_MINT;
   const b = input.b ?? DEFAULT_B;
-  const [market] = deriveMarket(input.creator.publicKey, input.question);
+  const [market] = deriveMarket(input.creator, input.question);
   const [vault] = deriveVault(market);
 
-  const program = programFor(input.creator);
+  const program = readOnlyProgram();
   const { address: creatorAta, ix: ataIx } = await ensureAta(
-    input.creator.publicKey,
+    input.creator,
     input.creator,
     mint,
   );
@@ -112,7 +117,7 @@ export async function createMarket(input: {
       input.resolver,
     )
     .accounts({
-      creator: input.creator.publicKey,
+      creator: input.creator,
       market,
       collateralMint: mint,
       vault,
@@ -120,57 +125,44 @@ export async function createMarket(input: {
     })
     .instruction();
 
-  const signature = await sendAndConfirm(
+  const transaction = await buildUnsignedTransaction(
     [computeBudget(), ...(ataIx ? [ataIx] : []), ix],
-    [input.creator],
-    input.creator.publicKey,
+    input.creator,
   );
 
-  // b·ln2, floored — the same value the program computed via lmsr::cost(0,0,b).
   const seedAmount = (
     (BigInt(b) * 693_147_180_559_945_309n) /
     1_000_000_000_000_000_000n
   ).toString();
 
   return {
+    transaction,
     market: market.toBase58(),
     vault: vault.toBase58(),
-    signature,
     seedAmount,
   };
 }
 
-export interface TradeResult {
-  signature: string;
-  /** Shares received (buy) or collateral received (sell), base units. */
+export interface TradeTx {
+  transaction: string;
   received: string;
-  quotedReceived: string;
 }
 
-/**
- * Buy `outcome` shares with `collateral` base units.
- *
- * Slippage is a **floor on shares received**, not a price tolerance: a
- * price-based limit would have to say which price (marginal-before,
- * marginal-after, average-paid) and those differ by exactly the impact being
- * guarded against. The floor comes from a simulation of the real instruction,
- * so it reflects the program's own fixed-point math rather than a reimplementation.
- */
-export async function buyShares(input: {
-  trader: Keypair;
+/** Build an unsigned buy. */
+export async function buildBuySharesTx(input: {
+  trader: PublicKey;
   market: PublicKey;
   outcome: Outcome;
   collateral: bigint;
-  /** Fraction, e.g. 0.01 for 1%. Applied to the simulated quote. */
   slippage?: number;
   mint?: PublicKey;
-}): Promise<TradeResult> {
+}): Promise<TradeTx> {
   const mint = input.mint ?? COLLATERAL_MINT;
   const [vault] = deriveVault(input.market);
-  const [position] = derivePosition(input.market, input.trader.publicKey);
-  const program = programFor(input.trader);
+  const [position] = derivePosition(input.market, input.trader);
+  const program = readOnlyProgram();
   const { address: traderAta, ix: ataIx } = await ensureAta(
-    input.trader.publicKey,
+    input.trader,
     input.trader,
     mint,
   );
@@ -196,7 +188,7 @@ export async function buyShares(input: {
       new BN(minSharesOut.toString()),
     )
     .accounts({
-      buyer: input.trader.publicKey,
+      buyer: input.trader,
       market: input.market,
       position,
       vault,
@@ -204,34 +196,29 @@ export async function buyShares(input: {
     })
     .instruction();
 
-  const signature = await sendAndConfirm(
+  const transaction = await buildUnsignedTransaction(
     [computeBudget(), ...(ataIx ? [ataIx] : []), ix],
-    [input.trader],
-    input.trader.publicKey,
+    input.trader,
   );
 
-  return {
-    signature,
-    received: quoted.toString(),
-    quotedReceived: quoted.toString(),
-  };
+  return { transaction, received: quoted.toString() };
 }
 
-/** Sell `shares` of `outcome` back to the market. */
-export async function sellShares(input: {
-  trader: Keypair;
+/** Build an unsigned sell. */
+export async function buildSellSharesTx(input: {
+  trader: PublicKey;
   market: PublicKey;
   outcome: Outcome;
   shares: bigint;
   slippage?: number;
   mint?: PublicKey;
-}): Promise<TradeResult> {
+}): Promise<TradeTx> {
   const mint = input.mint ?? COLLATERAL_MINT;
   const [vault] = deriveVault(input.market);
-  const [position] = derivePosition(input.market, input.trader.publicKey);
-  const program = programFor(input.trader);
+  const [position] = derivePosition(input.market, input.trader);
+  const program = readOnlyProgram();
   const { address: traderAta, ix: ataIx } = await ensureAta(
-    input.trader.publicKey,
+    input.trader,
     input.trader,
     mint,
   );
@@ -257,7 +244,7 @@ export async function sellShares(input: {
       new BN(minUsdcOut.toString()),
     )
     .accounts({
-      seller: input.trader.publicKey,
+      seller: input.trader,
       market: input.market,
       position,
       vault,
@@ -265,24 +252,14 @@ export async function sellShares(input: {
     })
     .instruction();
 
-  const signature = await sendAndConfirm(
+  const transaction = await buildUnsignedTransaction(
     [computeBudget(), ...(ataIx ? [ataIx] : []), ix],
-    [input.trader],
-    input.trader.publicKey,
+    input.trader,
   );
 
-  return {
-    signature,
-    received: quoted.toString(),
-    quotedReceived: quoted.toString(),
-  };
+  return { transaction, received: quoted.toString() };
 }
 
-/**
- * Crank a market closed. Permissionless by design — the transition carries no
- * discretion, and gating it on a key would let a lost key strand every position,
- * since resolution requires `Closed`.
- */
 export async function closeMarket(input: {
   payer: Keypair;
   market: PublicKey;
@@ -295,7 +272,6 @@ export async function closeMarket(input: {
   return sendAndConfirm([ix], [input.payer], input.payer.publicKey);
 }
 
-/** Write the winning outcome. Only the stored resolver may do this. */
 export async function resolveMarket(input: {
   resolver: Keypair;
   payer?: Keypair;
@@ -316,24 +292,18 @@ export async function resolveMarket(input: {
   return sendAndConfirm([ix], signers, payer.publicKey);
 }
 
-/**
- * Redeem a resolved position: winning shares 1:1, losing shares zero.
- *
- * Succeeds for a pure loser too — they are paid nothing, their position is
- * cleared, and the account's rent is returned. Erroring on them would strand
- * the account forever.
- */
-export async function redeem(input: {
-  owner: Keypair;
+/** Build an unsigned redeem. */
+export async function buildRedeemTx(input: {
+  owner: PublicKey;
   market: PublicKey;
   mint?: PublicKey;
-}): Promise<string> {
+}): Promise<{ transaction: string }> {
   const mint = input.mint ?? COLLATERAL_MINT;
   const [vault] = deriveVault(input.market);
-  const [position] = derivePosition(input.market, input.owner.publicKey);
-  const program = programFor(input.owner);
+  const [position] = derivePosition(input.market, input.owner);
+  const program = readOnlyProgram();
   const { address: ownerAta, ix: ataIx } = await ensureAta(
-    input.owner.publicKey,
+    input.owner,
     input.owner,
     mint,
   );
@@ -341,7 +311,7 @@ export async function redeem(input: {
   const ix = await program.methods
     .redeem()
     .accounts({
-      owner: input.owner.publicKey,
+      owner: input.owner,
       market: input.market,
       position,
       vault,
@@ -349,11 +319,100 @@ export async function redeem(input: {
     })
     .instruction();
 
-  return sendAndConfirm(
+  const transaction = await buildUnsignedTransaction(
     [computeBudget(), ...(ataIx ? [ataIx] : []), ix],
-    [input.owner],
-    input.owner.publicKey,
+    input.owner,
   );
+  return { transaction };
 }
 
 export { questionHash };
+
+/** Script helpers: build + sign with a local Keypair (smoke tests). */
+export async function createMarket(input: {
+  creator: Keypair;
+  resolver: PublicKey;
+  question: string;
+  closeTime: number;
+  b?: number;
+  mint?: PublicKey;
+}): Promise<CreateMarketTx & { signature: string }> {
+  const built = await buildCreateMarketTx({
+    creator: input.creator.publicKey,
+    resolver: input.resolver,
+    question: input.question,
+    closeTime: input.closeTime,
+    b: input.b,
+    mint: input.mint,
+  });
+  const signature = await signSerialized(built.transaction, input.creator);
+  return { ...built, signature };
+}
+
+export async function buyShares(input: {
+  trader: Keypair;
+  market: PublicKey;
+  outcome: Outcome;
+  collateral: bigint;
+  slippage?: number;
+  mint?: PublicKey;
+}): Promise<{ signature: string; received: string; quotedReceived: string }> {
+  const built = await buildBuySharesTx({
+    trader: input.trader.publicKey,
+    market: input.market,
+    outcome: input.outcome,
+    collateral: input.collateral,
+    slippage: input.slippage,
+    mint: input.mint,
+  });
+  const signature = await signSerialized(built.transaction, input.trader);
+  return {
+    signature,
+    received: built.received,
+    quotedReceived: built.received,
+  };
+}
+
+export async function sellShares(input: {
+  trader: Keypair;
+  market: PublicKey;
+  outcome: Outcome;
+  shares: bigint;
+  slippage?: number;
+  mint?: PublicKey;
+}): Promise<{ signature: string; received: string; quotedReceived: string }> {
+  const built = await buildSellSharesTx({
+    trader: input.trader.publicKey,
+    market: input.market,
+    outcome: input.outcome,
+    shares: input.shares,
+    slippage: input.slippage,
+    mint: input.mint,
+  });
+  const signature = await signSerialized(built.transaction, input.trader);
+  return {
+    signature,
+    received: built.received,
+    quotedReceived: built.received,
+  };
+}
+
+async function signSerialized(
+  transactionBase64: string,
+  signer: Keypair,
+): Promise<string> {
+  const { Transaction } = await import("@solana/web3.js");
+  const { connection: connFn, COMMITMENT } = await import("./program");
+  const conn = connFn();
+  const tx = Transaction.from(Buffer.from(transactionBase64, "base64"));
+  tx.partialSign(signer);
+  const raw = tx.serialize();
+  const sig = await conn.sendRawTransaction(raw);
+  const blockhash = tx.recentBlockhash!;
+  const lastValidBlockHeight = tx.lastValidBlockHeight ?? 0;
+  await conn.confirmTransaction(
+    { signature: sig, blockhash, lastValidBlockHeight },
+    COMMITMENT,
+  );
+  return sig;
+}

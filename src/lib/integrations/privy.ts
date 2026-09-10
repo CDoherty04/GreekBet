@@ -1,45 +1,55 @@
 /**
- * Privy — embedded wallet integration (STUB, now Solana-shaped).
+ * Privy server client — access-token verification and user lookups.
  *
- * Bounty: best financial flow. Wallets are created automatically at signup
- * (from just a selfie + phone number) — the user never sees seed phrases.
- *
- * ## What changed and why
- *
- * This previously returned a random **EVM** address (`0x…`). Markets settle on
- * **Solana**, so such an address could never sign a transaction or own a token
- * account — it was display-only, which was fine while balances were internal
- * play tokens and is not fine now that trades are real.
- *
- * It now provisions a genuine Solana keypair via `src/lib/chain/wallet.ts`. The
- * key is held **server-side**: that is custodial, deliberately, because there is
- * no browser signer until real Privy is wired up, and it preserves the
- * "no seed phrase" onboarding the product is built around.
- *
- * TODO(real): swap the body for Privy's server SDK with Solana embedded
- * wallets. The signature below is unchanged, and nothing above this module
- * touches a secret key — callers only ever see the address.
+ * Auth and embedded Solana wallets live in Privy. This module is the server
+ * half: verify the Bearer token on API routes and (optionally) fetch the
+ * Privy user when we need linked phone / wallet metadata.
  */
 
 import "server-only";
 
-import { keypairFor } from "@/lib/chain/wallet";
+import { PrivyClient } from "@privy-io/node";
+
+let client: PrivyClient | null = null;
+
+export function privyConfigured(): boolean {
+  return Boolean(
+    process.env.NEXT_PUBLIC_PRIVY_APP_ID && process.env.PRIVY_APP_SECRET,
+  );
+}
+
+export function privy(): PrivyClient {
+  const appId = process.env.NEXT_PUBLIC_PRIVY_APP_ID;
+  const appSecret = process.env.PRIVY_APP_SECRET;
+  if (!appId || !appSecret) {
+    throw new Error("Privy is not configured (NEXT_PUBLIC_PRIVY_APP_ID / PRIVY_APP_SECRET)");
+  }
+  client ??= new PrivyClient({ appId, appSecret });
+  return client;
+}
+
+export interface VerifiedPrivyUser {
+  privyId: string;
+}
+
+/** Verify a Privy access token; throws if missing/invalid. */
+export async function verifyAccessToken(
+  accessToken: string | null | undefined,
+): Promise<VerifiedPrivyUser> {
+  if (!accessToken) throw new Error("Missing access token");
+  const claims = await privy().utils().auth().verifyAccessToken(accessToken);
+  return { privyId: claims.user_id };
+}
+
+export function bearerToken(req: Request): string | null {
+  const header = req.headers.get("authorization");
+  if (!header?.startsWith("Bearer ")) return null;
+  return header.slice("Bearer ".length).trim() || null;
+}
 
 export interface Wallet {
   address: string;
-  /** Which provider created the wallet (for display/debugging). */
   provider: "privy";
-}
-
-/**
- * Provision an embedded wallet for a user.
- *
- * Deterministic per `userId`: calling it again returns the same address rather
- * than orphaning the previous one along with any funds in it.
- */
-export async function createWallet(userId: string): Promise<Wallet> {
-  const keypair = keypairFor(userId);
-  return { address: keypair.publicKey.toBase58(), provider: "privy" };
 }
 
 /** Short display form, e.g. "7xKX…gAsU". */

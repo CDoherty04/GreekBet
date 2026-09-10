@@ -100,7 +100,31 @@ export function readOnlyProgram(): Program {
 export { PROGRAM_ID };
 
 /**
+ * Build an unsigned legacy transaction for the fee payer to sign (Privy).
+ *
+ * Returns base64 bytes suitable for `useSignAndSendTransaction`.
+ */
+export async function buildUnsignedTransaction(
+  instructions: TransactionInstruction[],
+  feePayer: PublicKey,
+): Promise<string> {
+  const conn = connection();
+  const { blockhash, lastValidBlockHeight } =
+    await conn.getLatestBlockhash(COMMITMENT);
+  const tx = new Transaction({ blockhash, lastValidBlockHeight, feePayer }).add(
+    ...instructions,
+  );
+  const raw = tx.serialize({
+    requireAllSignatures: false,
+    verifySignatures: false,
+  });
+  return Buffer.from(raw).toString("base64");
+}
+
+/**
  * Sign and send, retrying in a way that cannot double-apply.
+ *
+ * Used for server-held keys (resolver / fee payer), not user wallets.
  *
  * Devnet drops transactions and expires blockhashes routinely, and the naive
  * fix — rebuild and resend on timeout — can apply a trade twice. The contracts'

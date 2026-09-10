@@ -45,8 +45,6 @@ export async function GET(
       phone: "",
       walletAddress: "",
       worldId: "",
-      telegramChatId: "",
-      telegramUsername: "",
     }));
     return ok({
       group: { ...group, code: "", memberIds: [] },

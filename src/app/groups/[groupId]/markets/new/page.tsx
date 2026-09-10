@@ -1,6 +1,6 @@
 "use client";
 
-/** Create a yes/no market inside a group. */
+/** Create a yes/no market inside a group — signed with Privy. */
 
 import { useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -8,6 +8,7 @@ import { TopBar } from "@/components/TopBar";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { useRequireUser } from "@/components/SessionProvider";
+import { usePrivySend } from "@/hooks/usePrivySend";
 import { api } from "@/lib/api";
 
 const UNITS: { label: string; ms: number }[] = [
@@ -19,6 +20,7 @@ const UNITS: { label: string; ms: number }[] = [
 export default function NewMarketPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const { user } = useRequireUser();
+  const { sendBase64 } = usePrivySend();
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [durationValue, setDurationValue] = useState("1");
@@ -33,9 +35,17 @@ export default function NewMarketPage() {
     try {
       const amount = Math.max(1, Number(durationValue) || 0);
       const ms = amount * UNITS[unitIdx].ms;
-      const { market } = await api.createMarket(groupId, {
+      const prepared = await api.prepareCreateMarket(groupId, {
         title,
         expiresAt: Date.now() + ms,
+      });
+      const signature = await sendBase64(prepared.transaction);
+      const { market } = await api.confirmMarket(groupId, {
+        marketAddress: prepared.marketAddress,
+        signature,
+        title: prepared.title,
+        description: prepared.description,
+        seedAmount: prepared.seedAmount,
       });
       router.replace(`/markets/${market.address}`);
     } catch (e) {
@@ -51,23 +61,23 @@ export default function NewMarketPage() {
         <TextField
           label="Question"
           name="title"
-          placeholder="Will it rain at the BBQ? ☔️"
+          placeholder="Will it rain at the BBQ?"
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           autoFocus
           hint="Phrase it as a yes/no question so it can resolve cleanly."
         />
         <div>
-          <span className="mb-1.5 block label-hud">
-            Betting closes in
-          </span>
+          <span className="mb-1.5 block label-hud">Betting closes in</span>
           <div className="flex gap-2">
             <input
               type="text"
               inputMode="numeric"
               pattern="[0-9]*"
               value={durationValue}
-              onChange={(e) => setDurationValue(e.target.value.replace(/[^\d]/g, ""))}
+              onChange={(e) =>
+                setDurationValue(e.target.value.replace(/[^\d]/g, ""))
+              }
               className="w-24 rounded-2xl border border-border bg-surface-2 px-4 py-3.5 text-base text-foreground outline-none focus:border-brand"
             />
             <select
@@ -88,7 +98,7 @@ export default function NewMarketPage() {
           <Button
             loading={submitting}
             disabled={!title.trim() || Number(durationValue) < 1 || !user}
-            onClick={submit}
+            onClick={() => void submit()}
           >
             Create market
           </Button>

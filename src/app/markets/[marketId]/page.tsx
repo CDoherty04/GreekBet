@@ -23,8 +23,9 @@ import { Card } from "@/components/ui/Card";
 import { OddsBar } from "@/components/OddsBar";
 import { Countdown, useNow } from "@/components/Countdown";
 import { useRequireUser } from "@/components/SessionProvider";
+import { usePrivySend } from "@/hooks/usePrivySend";
 import { api } from "@/lib/api";
-import { formatProb, winningShares } from "@/lib/markets";
+import { formatProb, winningShares } from "@/lib/market-display";
 import { formatUnits, parseUnits, UNIT } from "@/lib/chain/config";
 import type { MarketView, Side } from "@/types";
 
@@ -33,6 +34,7 @@ type Action = "buy" | "sell";
 export default function MarketDetailPage() {
   const { marketId } = useParams<{ marketId: string }>();
   const { user, loading } = useRequireUser();
+  const { sendBase64 } = usePrivySend();
   const [market, setMarket] = useState<MarketView | null>(null);
   const [side, setSide] = useState<Side>("yes");
   const [action, setAction] = useState<Action>("buy");
@@ -110,18 +112,18 @@ export default function MarketDetailPage() {
     setNotice(null);
     try {
       const base = parseUnits(amount);
-      const res = await api.trade(marketId, {
+      const prepared = await api.prepareTrade(marketId, {
         side,
         action,
         amount: base.toString(),
       });
+      const signature = await sendBase64(prepared.transaction);
       setNotice(
         action === "buy"
-          ? `Bought ${formatUnits(res.received)} ${side.toUpperCase()} shares`
-          : `Sold for $${formatUnits(res.received)}`,
+          ? `Bought ${formatUnits(prepared.received)} ${side.toUpperCase()} shares`
+          : `Sold for $${formatUnits(prepared.received)}`,
       );
-      // The projection lags the transaction; refetch until it catches up.
-      setMarket(res.market);
+      void signature;
       setTimeout(() => void load().catch(() => {}), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Trade failed");
@@ -134,8 +136,8 @@ export default function MarketDetailPage() {
     setBusy(true);
     setError(null);
     try {
-      const res = await api.redeem(marketId);
-      setMarket(res.market);
+      const prepared = await api.prepareRedeem(marketId);
+      await sendBase64(prepared.transaction);
       setNotice("Redeemed");
       setTimeout(() => void load().catch(() => {}), 2500);
     } catch (e) {
@@ -239,7 +241,7 @@ export default function MarketDetailPage() {
           />
         ) : isOwner && live ? (
           <Card className="text-sm text-muted">
-            You&apos;re the group owner — you referee this event and can&apos;t
+            You&apos;re the group owner, you referee this event and can&apos;t
             trade in it.
           </Card>
         ) : live ? (

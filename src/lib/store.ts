@@ -6,16 +6,17 @@
  * money — prices, positions, trades, settlement — lives on chain and is read
  * through `src/lib/chain/projection.ts`, never from here.
  *
- * Two things that used to live here are gone:
+ * Persisted to `.data/app-store.json` so a Privy session still maps to an app
+ * profile after `next` restarts (otherwise authenticated users get stuck
+ * re-onboarding).
  *
- * * **Bets.** Trades are on-chain events now; the indexer is the source of
- *   truth and duplicating them here would let the two disagree.
- * * **`User.balance`.** Users hold real devnet USDC in a token account, so a
- *   second internal balance would be a lie the moment anything moved on chain.
- *
- * Attached to `globalThis` so it survives Next.js hot-reloads in development.
+ * Also attached to `globalThis` so it survives hot-reloads in development.
  */
 
+import "server-only";
+
+import * as fs from "fs";
+import * as path from "path";
 import type { Group, ID, Market, User } from "@/types";
 import { seedDemoData } from "@/lib/db/seed";
 import { normalizePhone } from "@/lib/phone";
@@ -28,9 +29,52 @@ interface Store {
   seeded: boolean;
 }
 
+interface PersistedStore {
+  users: User[];
+  groups: Group[];
+  markets: Market[];
+}
+
+const STORE_FILE = path.join(process.cwd(), ".data", "app-store.json");
+
 const globalForStore = globalThis as unknown as { __groupbetStore?: Store };
 
+function persistSoon(store: Store): void {
+  try {
+    fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
+    const payload: PersistedStore = {
+      users: [...store.users.values()],
+      groups: [...store.groups.values()],
+      markets: [...store.markets.values()],
+    };
+    const tmp = `${STORE_FILE}.tmp`;
+    fs.writeFileSync(tmp, JSON.stringify(payload), "utf8");
+    fs.renameSync(tmp, STORE_FILE);
+  } catch (err) {
+    console.error("app-store persist failed", err);
+  }
+}
+
+function loadPersisted(): Store | null {
+  try {
+    const raw = fs.readFileSync(STORE_FILE, "utf8");
+    const data = JSON.parse(raw) as PersistedStore;
+    if (!Array.isArray(data.users)) return null;
+    return {
+      users: new Map(data.users.map((u) => [u.id, u])),
+      groups: new Map((data.groups ?? []).map((g) => [g.id, g])),
+      markets: new Map((data.markets ?? []).map((m) => [m.address, m])),
+      seeded: true,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function createStore(): Store {
+  const persisted = loadPersisted();
+  if (persisted) return persisted;
+
   const store: Store = {
     users: new Map(),
     groups: new Map(),
@@ -39,6 +83,7 @@ function createStore(): Store {
   };
   seedDemoData(store);
   store.seeded = true;
+  persistSoon(store);
   return store;
 }
 
@@ -63,6 +108,7 @@ export const db = {
   },
   createUser(user: User): User {
     store.users.set(user.id, user);
+    persistSoon(store);
     return user;
   },
   updateUser(id: ID, patch: Partial<User>): User | undefined {
@@ -70,6 +116,7 @@ export const db = {
     if (!user) return undefined;
     const next = { ...user, ...patch };
     store.users.set(id, next);
+    persistSoon(store);
     return next;
   },
 
@@ -88,18 +135,21 @@ export const db = {
   },
   createGroup(group: Group): Group {
     store.groups.set(group.id, group);
+    persistSoon(store);
     return group;
   },
   addMember(groupId: ID, userId: ID): Group | undefined {
     const group = store.groups.get(groupId);
     if (!group) return undefined;
     if (!group.memberIds.includes(userId)) group.memberIds.push(userId);
+    persistSoon(store);
     return group;
   },
   removeMember(groupId: ID, userId: ID): Group | undefined {
     const group = store.groups.get(groupId);
     if (!group) return undefined;
     group.memberIds = group.memberIds.filter((id) => id !== userId);
+    persistSoon(store);
     return group;
   },
 
@@ -117,6 +167,7 @@ export const db = {
   },
   createMarket(market: Market): Market {
     store.markets.set(market.address, market);
+    persistSoon(store);
     return market;
   },
   updateMarket(address: string, patch: Partial<Market>): Market | undefined {
@@ -124,6 +175,7 @@ export const db = {
     if (!market) return undefined;
     const next = { ...market, ...patch };
     store.markets.set(address, next);
+    persistSoon(store);
     return next;
   },
   /**
@@ -137,7 +189,9 @@ export const db = {
    * is why the route restricts it.
    */
   deleteMarket(address: string): boolean {
-    return store.markets.delete(address);
+    const ok = store.markets.delete(address);
+    if (ok) persistSoon(store);
+    return ok;
   },
 };
 

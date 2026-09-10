@@ -1,28 +1,17 @@
 /**
- * /api/markets/[marketId]/quote — what would this trade give me?
- *
- * The UI needs this before a trade to show the shares (or collateral) the user
- * would receive and the effective price.
- *
- * The number comes from **simulating the real instruction** and reading the
- * event it emits, not from a TypeScript reimplementation of the LMSR. That
- * matters: the program computes in Q64.64 fixed point, and its own test suite
- * found that even a 60-digit reference disagrees by ±1 base unit at extreme
- * skew. A double-precision copy here would drift often enough to quote prices
- * the chain then refuses.
+ * /api/markets/[marketId]/quote — simulate a trade for display.
  */
 
 import { PublicKey } from "@solana/web3.js";
+import { getAssociatedTokenAddress } from "@solana/spl-token";
 
 import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
 import { getChainMarket } from "@/lib/chain/projection";
-import { keypairFor } from "@/lib/chain/wallet";
 import { quoteBuy, quoteSell } from "@/lib/chain/quote";
 import { derivePosition, deriveVault } from "@/lib/chain/pdas";
 import { COLLATERAL_MINT, UNIT } from "@/lib/chain/config";
-import { getAssociatedTokenAddress } from "@solana/spl-token";
 import type { Side } from "@/types";
 
 interface QuoteBody {
@@ -37,6 +26,7 @@ export async function POST(
 ) {
   const user = await getCurrentUser();
   if (!user) return fail("Not signed in", 401);
+  if (!user.walletAddress) return fail("No wallet linked", 400);
 
   const { marketId } = await ctx.params;
   const meta = db.getMarket(marketId);
@@ -60,15 +50,11 @@ export async function POST(
 
   try {
     const market = new PublicKey(marketId);
-    const trader = keypairFor(user.id);
+    const trader = new PublicKey(user.walletAddress);
     const [vault] = deriveVault(market);
-    const [position] = derivePosition(market, trader.publicKey);
+    const [position] = derivePosition(market, trader);
     const mint = new PublicKey(chain.collateralMint || COLLATERAL_MINT);
-    const traderAta = await getAssociatedTokenAddress(
-      mint,
-      trader.publicKey,
-      true,
-    );
+    const traderAta = await getAssociatedTokenAddress(mint, trader, true);
 
     const received =
       body.action === "sell"
@@ -91,8 +77,6 @@ export async function POST(
             position,
           });
 
-    // Effective price per share, as a fraction of 1e6 — the same unit the
-    // program uses for prices, so it is directly comparable to `priceYes`.
     const avgPrice =
       body.action === "buy"
         ? received > 0n
@@ -104,8 +88,6 @@ export async function POST(
 
     return ok({ received: received.toString(), avgPrice });
   } catch (err) {
-    // A quote failure is usually the program rejecting the trade — no
-    // collateral, no shares to sell, a zero-value trade. Say so.
     const msg = err instanceof Error ? err.message : "Could not quote";
     return fail(msg, 422);
   }

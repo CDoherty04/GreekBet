@@ -1,14 +1,5 @@
 /**
- * /api/markets/[marketId]/redeem — claim a resolved position.
- *
- * Winning shares redeem 1:1 for collateral from the market's vault; losing
- * shares redeem for zero. A pure loser still succeeds: their position is
- * cleared and the account's rent is returned to them. Erroring on them would
- * strand the account forever.
- *
- * This is the step the parimutuel model did not have. Previously the app
- * credited winners itself during resolution; now only the program can move
- * collateral, so the holder claims it.
+ * /api/markets/[marketId]/redeem — prepare an unsigned redeem for Privy.
  */
 
 import { PublicKey } from "@solana/web3.js";
@@ -16,10 +7,8 @@ import { PublicKey } from "@solana/web3.js";
 import { db } from "@/lib/store";
 import { fail, ok } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
-import { toMarketView } from "@/lib/markets";
-import { redeem } from "@/lib/chain/actions";
+import { buildRedeemTx } from "@/lib/chain/actions";
 import { getChainMarket } from "@/lib/chain/projection";
-import { keypairFor } from "@/lib/chain/wallet";
 import { onChainMessage } from "@/app/api/groups/[groupId]/markets/route";
 
 export async function POST(
@@ -28,6 +17,7 @@ export async function POST(
 ) {
   const user = await getCurrentUser();
   if (!user) return fail("Not signed in", 401);
+  if (!user.walletAddress) return fail("No wallet linked", 400);
 
   const { marketId } = await ctx.params;
   const meta = db.getMarket(marketId);
@@ -45,14 +35,11 @@ export async function POST(
   }
 
   try {
-    const signature = await redeem({
-      owner: keypairFor(user.id),
+    const { transaction } = await buildRedeemTx({
+      owner: new PublicKey(user.walletAddress),
       market: new PublicKey(marketId),
     });
-    return ok({
-      signature,
-      market: toMarketView(meta, getChainMarket(marketId), user.walletAddress),
-    });
+    return ok({ transaction });
   } catch (err) {
     return fail(onChainMessage(err), 502);
   }

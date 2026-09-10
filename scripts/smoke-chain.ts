@@ -20,10 +20,10 @@ import { quoteBuy } from "../src/lib/chain/quote";
 import { COLLATERAL_MINT, formatUnits } from "../src/lib/chain/config";
 import { derivePosition, deriveVault } from "../src/lib/chain/pdas";
 import { connection } from "../src/lib/chain/program";
-import { keypairFor, resolverKeypair } from "../src/lib/chain/wallet";
+import { roleKeypair, resolverKeypair } from "../src/lib/chain/wallet";
 
 async function main() {
-  const trader = keypairFor("smoke-trader");
+  const trader = roleKeypair("smoke-trader");
   const resolver = resolverKeypair();
   const conn = connection();
 
@@ -76,7 +76,7 @@ async function main() {
 
   console.log("\n[2] quote 1.00 USDC of YES (simulated against the program)");
   const quoted = await quoteBuy({
-    trader,
+    trader: trader.publicKey,
     market,
     outcome: "yes",
     collateral: 1_000_000n,

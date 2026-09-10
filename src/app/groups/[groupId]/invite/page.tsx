@@ -60,7 +60,10 @@ export default function GroupInvitePage() {
       }
       const synced = await api.syncTelegram();
       if (synced.matched && user) {
-        setUser({ ...user, telegramChatId: synced.telegramChatId ?? user.telegramChatId });
+        setUser({
+          ...user,
+          telegramChatId: synced.telegramChatId ?? user.telegramChatId,
+        });
       } else if (link.deepLink) {
         setError("Tap Start in Telegram, then hit Enable again.");
       } else {
@@ -87,10 +90,19 @@ export default function GroupInvitePage() {
     }
   }
 
-  if (loading || !user || !group) {
+  if (loading || !user) {
     return (
       <div className="flex flex-1 items-center justify-center">
         <span className="h-6 w-6 animate-spin rounded-full border-2 border-brand border-t-transparent" />
+      </div>
+    );
+  }
+
+  if (!group) {
+    return (
+      <div className="flex flex-1 flex-col">
+        <TopBar title="Squad" back />
+        <p className="p-4 text-sm text-no">{error ?? "Loading…"}</p>
       </div>
     );
   }
@@ -102,7 +114,7 @@ export default function GroupInvitePage() {
         back
         right={
           <button
-            onClick={share}
+            onClick={() => void share()}
             aria-label="Share group"
             className="flex items-center gap-1.5 rounded-full border border-border bg-surface-2 py-1 pl-2.5 pr-2 text-muted hover:border-brand hover:text-foreground"
           >
