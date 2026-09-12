@@ -11,7 +11,7 @@ import type { Group } from "@/types";
 export async function GET() {
   const user = await getCurrentUser();
   if (!user) return fail("Not signed in", 401);
-  return ok({ groups: db.listGroupsForUser(user.id) });
+  return ok({ groups: await db.listGroupsForUser(user.id) });
 }
 
 interface CreateGroupBody {
@@ -28,20 +28,20 @@ export async function POST(req: Request) {
   const group: Group = {
     id: newId("g"),
     name: body.name.trim(),
-    code: uniqueCode(),
+    code: await uniqueCode(),
     ownerId: user.id,
     memberIds: [user.id],
     createdAt: Date.now(),
   };
-  db.createGroup(group);
+  await db.createGroup(group);
   return ok({ group }, { status: 201 });
 }
 
 /** Generate a group code, retrying on the (rare) chance of a collision. */
-function uniqueCode(): string {
+async function uniqueCode(): Promise<string> {
   for (let i = 0; i < 5; i++) {
     const code = newGroupCode();
-    if (!db.getGroupByCode(code)) return code;
+    if (!(await db.getGroupByCode(code))) return code;
   }
   return newGroupCode();
 }

@@ -14,9 +14,9 @@ export async function POST(
   if (!user) return fail("Not signed in", 401);
 
   const { groupId } = await ctx.params;
-  const group = db.getGroup(groupId);
+  const group = await db.getGroup(groupId);
   if (!group) return fail("Group not found", 404);
 
-  db.addMember(group.id, user.id);
+  await db.addMember(group.id, user.id);
   return ok({ group });
 }

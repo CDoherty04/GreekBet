@@ -34,7 +34,7 @@ export async function POST(req: Request) {
   const privyId = await getPrivyId();
   if (!privyId) return fail("Not signed in", 401);
 
-  const existing = db.getUser(privyId);
+  const existing = await db.getUser(privyId);
   if (existing) {
     const body = await readJson<{ walletAddress?: string }>(req);
     if (
@@ -42,7 +42,7 @@ export async function POST(req: Request) {
       body.walletAddress !== existing.walletAddress &&
       !body.walletAddress.startsWith("0x")
     ) {
-      const updated = db.updateUser(privyId, {
+      const updated = await db.updateUser(privyId, {
         walletAddress: body.walletAddress,
       });
       void fundDevnetWallet(body.walletAddress).catch(() => {});
@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     verified: true,
     createdAt: Date.now(),
   };
-  db.createUser(user);
+  await db.createUser(user);
 
   let funded: Awaited<ReturnType<typeof fundDevnetWallet>> | null = null;
   try {

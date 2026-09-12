@@ -35,10 +35,10 @@ export async function POST(
   if (!user) return fail("Not signed in", 401);
 
   const { marketId } = await ctx.params;
-  const meta = db.getMarket(marketId);
+  const meta = await db.getMarket(marketId);
   if (!meta) return fail("Market not found", 404);
 
-  const group = db.getGroup(meta.groupId);
+  const group = await db.getGroup(meta.groupId);
   if (!group?.memberIds.includes(user.id)) {
     return fail("Market not found", 404);
   }
@@ -72,15 +72,15 @@ export async function POST(
   };
   // Drop a stale error from an earlier failed attempt; keep `attempts`.
   delete next.error;
-  const updated = db.updateMarket(marketId, { resolution: next })!;
+  const updated = ((await db.updateMarket(marketId, { resolution: next })))!;
 
   const settle: SettleResult = isSettleDue(updated, chain)
     ? await settleMarket(marketId)
     : { state: "waiting", closesAt: chain.closeTime * 1000 };
 
   return ok({
-    market: toMarketView(
-      db.getMarket(marketId) ?? updated,
+    market: await toMarketView(
+      (await db.getMarket(marketId)) ?? updated,
       getChainMarket(marketId),
       user.walletAddress,
     ),

@@ -26,10 +26,10 @@ type Loaded = { market: Market; group: Group } | { error: Response };
 
 /** Fetch a market plus its group, enforcing membership. */
 async function loadMarket(marketId: string, userId: string): Promise<Loaded> {
-  const market = db.getMarket(marketId);
+  const market = await db.getMarket(marketId);
   if (!market) return { error: fail("Market not found", 404) };
 
-  const group = db.getGroup(market.groupId);
+  const group = await db.getGroup(market.groupId);
   if (!group?.memberIds.includes(userId)) {
     // 404 rather than 403: a non-member should not learn the market exists.
     return { error: fail("Market not found", 404) };
@@ -53,7 +53,7 @@ export async function GET(
   scheduleDueSettlements([loaded.market], () => chain);
 
   return ok({
-    market: toMarketView(loaded.market, chain, user.walletAddress),
+    market: await toMarketView(loaded.market, chain, user.walletAddress),
   });
 }
 
@@ -93,9 +93,9 @@ export async function PATCH(
     patch.archived = body.archived;
   }
 
-  const updated = db.updateMarket(marketId, patch);
+  const updated = await db.updateMarket(marketId, patch);
   return ok({
-    market: toMarketView(updated!, chain, user.walletAddress),
+    market: await toMarketView(updated!, chain, user.walletAddress),
   });
 }
 
@@ -134,6 +134,6 @@ export async function DELETE(
     }
   }
 
-  db.deleteMarket(marketId);
+  await db.deleteMarket(marketId);
   return ok({ ok: true as const });
 }

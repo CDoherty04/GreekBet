@@ -20,7 +20,7 @@ const UNITS: { label: string; ms: number }[] = [
 export default function NewMarketPage() {
   const { groupId } = useParams<{ groupId: string }>();
   const { user } = useRequireUser();
-  const { sendBase64 } = usePrivySend();
+  const { sendBase64, ready } = usePrivySend();
   const router = useRouter();
   const [title, setTitle] = useState("");
   const [durationValue, setDurationValue] = useState("1");
@@ -93,14 +93,23 @@ export default function NewMarketPage() {
             </select>
           </div>
         </div>
+        {!ready && (
+          <p className="text-sm text-muted">Connecting Privy wallet…</p>
+        )}
         {error && <p className="text-sm text-no">{error}</p>}
         <div className="mt-auto">
           <Button
             loading={submitting}
-            disabled={!title.trim() || Number(durationValue) < 1 || !user}
+            disabled={
+              !title.trim() || Number(durationValue) < 1 || !user || submitting
+            }
             onClick={() => void submit()}
           >
-            Create market
+            {submitting
+              ? ready
+                ? "Creating…"
+                : "Waiting for wallet…"
+              : "Create market"}
           </Button>
         </div>
       </div>

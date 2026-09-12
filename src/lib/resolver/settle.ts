@@ -213,8 +213,11 @@ export function isSettleDue(
 /* ------------------------------------------------------------------ */
 
 export interface SettlerDeps {
-  getMarket(address: string): Market | undefined;
-  updateMarket(address: string, patch: Partial<Market>): Market | undefined;
+  getMarket(address: string): Promise<Market | undefined>;
+  updateMarket(
+    address: string,
+    patch: Partial<Market>,
+  ): Promise<Market | undefined>;
   getChainMarket(address: string): ChainMarket | undefined;
   closeMarket(input: { payer: Keypair; market: PublicKey }): Promise<string>;
   resolveMarket(input: {
@@ -243,18 +246,18 @@ export function createSettler(deps: SettlerDeps): Settler {
   const log = deps.log ?? console;
 
   /** Merge into the *current* record; no-op if it was cleared meanwhile. */
-  function patchRecord(
+  async function patchRecord(
     marketId: string,
     patch: Partial<ResolutionRecord>,
-  ): ResolutionRecord | undefined {
-    const current = deps.getMarket(marketId)?.resolution;
+  ): Promise<ResolutionRecord | undefined> {
+    const current = (await deps.getMarket(marketId))?.resolution;
     if (!current) return undefined;
     const next: ResolutionRecord = { ...current, ...patch };
     // `undefined` means "clear" — drop it rather than persisting the key.
     for (const key of Object.keys(next) as (keyof ResolutionRecord)[]) {
       if (next[key] === undefined) delete next[key];
     }
-    deps.updateMarket(marketId, { resolution: next });
+    await deps.updateMarket(marketId, { resolution: next });
     return next;
   }
 
@@ -262,12 +265,12 @@ export function createSettler(deps: SettlerDeps): Settler {
    * Mark `settled` because the chain says it is resolved. If the chain's
    * outcome differs from the record, the chain wins: say so loudly.
    */
-  function settledFromChain(
+  async function settledFromChain(
     marketId: string,
     record: ResolutionRecord,
     chainOutcome: Outcome | undefined,
     extra: Partial<ResolutionRecord> = {},
-  ): SettleResult {
+  ): Promise<SettleResult> {
     const now = deps.now();
     const recorded = record.outcome!;
     const outcome = chainOutcome ?? recorded;
@@ -282,7 +285,7 @@ export function createSettler(deps: SettlerDeps): Settler {
         `[settle] market ${marketId} is already resolved on chain; outcome not yet visible to the indexer, assuming ${recorded}`,
       );
     }
-    patchRecord(marketId, {
+    await patchRecord(marketId, {
       ...extra,
       status: "settled",
       settledAt: record.settledAt ?? now,
@@ -297,7 +300,7 @@ export function createSettler(deps: SettlerDeps): Settler {
   }
 
   async function run(marketId: string): Promise<SettleResult> {
-    const meta = deps.getMarket(marketId);
+    const meta = await deps.getMarket(marketId);
     if (!meta) return { state: "skipped", reason: "Market not found." };
     const record = meta.resolution;
     if (!record) {
@@ -341,7 +344,7 @@ export function createSettler(deps: SettlerDeps): Settler {
 
     // Step 5.
     const previousStatus = record.status;
-    patchRecord(marketId, {
+    await patchRecord(marketId, {
       status: "settling",
       attempts: (record.attempts ?? 0) + 1,
       updatedAt: now,
@@ -358,13 +361,13 @@ export function createSettler(deps: SettlerDeps): Settler {
       if (chain.status === "open") {
         try {
           closeSignature = await deps.closeMarket({ payer, market });
-          patchRecord(marketId, { closeSignature, updatedAt: deps.now() });
+          await patchRecord(marketId, { closeSignature, updatedAt: deps.now() });
         } catch (err) {
           const code = programError(err)?.code;
           if (code === ERR.CloseTimeNotReached) {
             // Wall clock is past close but the cluster clock isn't yet. Not a
             // failure: put the record back and let the next trigger retry.
-            patchRecord(marketId, {
+            await patchRecord(marketId, {
               status: previousStatus,
               updatedAt: deps.now(),
             });
@@ -398,7 +401,7 @@ export function createSettler(deps: SettlerDeps): Settler {
 
       // Step 8, success.
       const settledAt = deps.now();
-      patchRecord(marketId, {
+      await patchRecord(marketId, {
         status: "settled",
         settledAt,
         updatedAt: settledAt,
@@ -412,7 +415,11 @@ export function createSettler(deps: SettlerDeps): Settler {
       // Step 8, failure.
       const error = settleErrorMessage(err);
       log.error(`[settle] market ${marketId} failed: ${error}`, err);
-      patchRecord(marketId, { status: "failed", error, updatedAt: deps.now() });
+      await patchRecord(marketId, {
+        status: "failed",
+        error,
+        updatedAt: deps.now(),
+      });
       return { state: "failed", error };
     }
   }

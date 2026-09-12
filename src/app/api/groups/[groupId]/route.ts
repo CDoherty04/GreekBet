@@ -20,23 +20,25 @@ export async function GET(
   if (!user) return fail("Not signed in", 401);
 
   const { groupId } = await ctx.params;
-  const group = db.getGroup(groupId);
+  const group = await db.getGroup(groupId);
   if (!group) return fail("Group not found", 404);
 
   const isMember = group.memberIds.includes(user.id);
 
-  const members = group.memberIds
-    .map((id) => db.getUser(id))
-    .filter((u): u is User => Boolean(u));
+  const members = (
+    await Promise.all(group.memberIds.map((id) => db.getUser(id)))
+  ).filter((u): u is User => Boolean(u));
 
   // One projection read for the whole list rather than per market.
   const chain = projection();
-  const allMarkets = db.listMarketsForGroup(groupId);
+  const allMarkets = await db.listMarketsForGroup(groupId);
   // Settle due resolutions after responding; this list may lag by one load.
   scheduleDueSettlements(allMarkets, (address) => chain.get(address));
-  const markets = allMarkets
-    .filter((m) => !m.archived)
-    .map((m) => toMarketView(m, chain.get(m.address), user.walletAddress));
+  const markets = await Promise.all(
+    allMarkets
+      .filter((m) => !m.archived)
+      .map((m) => toMarketView(m, chain.get(m.address), user.walletAddress)),
+  );
 
   if (!isMember) {
     // A non-member sees the market list as a preview, but nothing that ties a

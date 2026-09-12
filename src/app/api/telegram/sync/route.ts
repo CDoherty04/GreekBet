@@ -18,7 +18,7 @@ export async function POST() {
   const absorbed = await absorbTelegramStarts();
   if (absorbed.error) return fail(absorbed.error, 502);
 
-  const fresh = db.getUser(user.id)!;
+  const fresh = (await db.getUser(user.id))!;
   return ok({
     matched: Boolean(fresh.telegramChatId),
     linked: absorbed.linked,

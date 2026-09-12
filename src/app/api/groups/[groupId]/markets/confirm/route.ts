@@ -26,7 +26,7 @@ export async function POST(
   if (!user) return fail("Not signed in", 401);
 
   const { groupId } = await ctx.params;
-  const group = db.getGroup(groupId);
+  const group = await db.getGroup(groupId);
   if (!group?.memberIds.includes(user.id)) {
     return fail("Group not found", 404);
   }
@@ -36,10 +36,10 @@ export async function POST(
     return fail("marketAddress, signature and title are required");
   }
 
-  const existing = db.getMarket(body.marketAddress);
+  const existing = await db.getMarket(body.marketAddress);
   if (existing) {
     return ok({
-      market: toMarketView(
+      market: await toMarketView(
         existing,
         getChainMarket(body.marketAddress),
         user.walletAddress,
@@ -59,10 +59,12 @@ export async function POST(
     createdAt: Date.now(),
     createSignature: body.signature,
   };
-  db.createMarket(market);
+  await db.createMarket(market);
 
-  const chatIds = group.memberIds
-    .map((id) => db.getUser(id)?.telegramChatId)
+  const chatIds = (
+    await Promise.all(group.memberIds.map((id) => db.getUser(id)))
+  )
+    .map((u) => u?.telegramChatId)
     .filter((id): id is string => Boolean(id));
   void notifyNewEvent({
     chatIds,
@@ -73,7 +75,7 @@ export async function POST(
 
   return ok(
     {
-      market: toMarketView(
+      market: await toMarketView(
         market,
         getChainMarket(body.marketAddress),
         user.walletAddress,

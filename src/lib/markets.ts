@@ -67,12 +67,12 @@ type RevealingFields =
  * Built by destructuring rather than spreading `market`, so the raw record can
  * never leak through `...market`.
  */
-function redactFor(
+async function redactFor(
   market: Market,
   chain: ChainMarket | undefined,
   viewerWallet: string | undefined,
   groupOwnerId: string,
-): Omit<Market, RevealingFields> & Pick<MarketView, RevealingFields> {
+): Promise<Omit<Market, RevealingFields> & Pick<MarketView, RevealingFields>> {
   const {
     resolution,
     resolutionImageUrl,
@@ -85,9 +85,10 @@ function redactFor(
   } = market;
 
   // `viewerWallet` may be "" for a user without a wallet — never match on that.
-  const isOwner =
-    Boolean(viewerWallet) &&
-    db.getUserByWallet(viewerWallet!)?.id === groupOwnerId;
+  const viewer = viewerWallet
+    ? await db.getUserByWallet(viewerWallet)
+    : undefined;
+  const isOwner = Boolean(viewerWallet) && viewer?.id === groupOwnerId;
   const revealed = isOwner || chain?.status === "resolved";
 
   if (revealed) {
@@ -130,13 +131,14 @@ function redactFor(
  * `viewerWallet` decides both `myPosition` and resolution redaction: omit it
  * and the view is redacted as for a non-owner.
  */
-export function toMarketView(
+export async function toMarketView(
   market: Market,
   chain: ChainMarket | undefined,
   viewerWallet?: string,
-): MarketView {
-  const groupOwnerId = db.getGroup(market.groupId)?.ownerId ?? market.createdBy;
-  const meta = redactFor(market, chain, viewerWallet, groupOwnerId);
+): Promise<MarketView> {
+  const group = await db.getGroup(market.groupId);
+  const groupOwnerId = group?.ownerId ?? market.createdBy;
+  const meta = await redactFor(market, chain, viewerWallet, groupOwnerId);
 
   if (!chain) {
     return {
@@ -178,7 +180,7 @@ export function toMarketView(
       seedAmount: chain.seedAmount,
       volume: chain.volume,
     },
-    trades: chain.trades.map(toTrade),
+    trades: await Promise.all(chain.trades.map(toTrade)),
     myPosition,
     indexed: true,
     groupOwnerId,
@@ -216,8 +218,8 @@ function toPosition(chain: ChainMarket, wallet: string): Position | undefined {
 }
 
 /** Attach display names by resolving wallet addresses back to users. */
-function toTrade(t: ChainMarket["trades"][number]): Trade {
-  const user = db.getUserByWallet(t.user);
+async function toTrade(t: ChainMarket["trades"][number]): Promise<Trade> {
+  const user = await db.getUserByWallet(t.user);
   return {
     signature: t.signature,
     slot: t.slot,

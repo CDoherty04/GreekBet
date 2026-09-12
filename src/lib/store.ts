@@ -1,198 +1,290 @@
 /**
- * In-memory data store for the **off-chain** half of the app.
+ * Durable off-chain store — MongoDB.
  *
- * Groups, membership, user profiles, and market metadata (the question text,
- * which group a market belongs to, the resolution photo). Everything about
- * money — prices, positions, trades, settlement — lives on chain and is read
- * through `src/lib/chain/projection.ts`, never from here.
+ * Groups, membership, user profiles, and market metadata (question text,
+ * resolution photo). Money / prices / positions stay on chain.
  *
- * Persisted to `.data/app-store.json` so a Privy session still maps to an app
- * profile after `next` restarts (otherwise authenticated users get stuck
- * re-onboarding).
- *
- * Also attached to `globalThis` so it survives hot-reloads in development.
+ * User profile fields that fit Privy's 1KB custom_metadata (name, wallet,
+ * worldId, telegram) are mirrored there on write so Privy stays the identity
+ * source of truth; Mongo remains authoritative for queries (by wallet/phone,
+ * group membership, markets).
  */
 
 import "server-only";
 
-import * as fs from "fs";
-import * as path from "path";
 import type { Group, ID, Market, User } from "@/types";
-import { seedDemoData } from "@/lib/db/seed";
+import { getMongo } from "@/lib/db/mongo";
+import { demoGroup, demoUsers } from "@/lib/db/seed";
 import { normalizePhone } from "@/lib/phone";
+import { privy, privyConfigured } from "@/lib/integrations/privy";
 
-interface Store {
-  users: Map<ID, User>;
-  groups: Map<ID, Group>;
-  /** Keyed by **market PDA**, not an internal id — the PDA is the join key. */
-  markets: Map<string, Market>;
-  seeded: boolean;
+type UserDoc = User & { _id: string };
+type GroupDoc = Group & { _id: string };
+type MarketDoc = Market & { _id: string };
+
+function stripId<T extends { _id?: string }>(doc: T): Omit<T, "_id"> {
+  const { _id: _, ...rest } = doc;
+  return rest;
 }
 
-interface PersistedStore {
-  users: User[];
-  groups: Group[];
-  markets: Market[];
+async function users() {
+  return (await getMongo()).collection<UserDoc>("users");
+}
+async function groups() {
+  return (await getMongo()).collection<GroupDoc>("groups");
+}
+async function markets() {
+  return (await getMongo()).collection<MarketDoc>("markets");
 }
 
-const STORE_FILE = path.join(process.cwd(), ".data", "app-store.json");
-
-const globalForStore = globalThis as unknown as { __groupbetStore?: Store };
-
-function persistSoon(store: Store): void {
+/** Best-effort mirror of profile fields onto Privy custom metadata. */
+async function syncPrivyMetadata(user: User): Promise<void> {
+  if (!privyConfigured()) return;
   try {
-    fs.mkdirSync(path.dirname(STORE_FILE), { recursive: true });
-    const payload: PersistedStore = {
-      users: [...store.users.values()],
-      groups: [...store.groups.values()],
-      markets: [...store.markets.values()],
+    const custom_metadata: Record<string, string | number | boolean> = {
+      name: user.name,
+      walletAddress: user.walletAddress,
+      worldId: user.worldId,
+      verified: user.verified,
     };
-    const tmp = `${STORE_FILE}.tmp`;
-    fs.writeFileSync(tmp, JSON.stringify(payload), "utf8");
-    fs.renameSync(tmp, STORE_FILE);
+    if (user.telegramChatId) custom_metadata.telegramChatId = user.telegramChatId;
+    if (user.telegramUsername) {
+      custom_metadata.telegramUsername = user.telegramUsername;
+    }
+    await privy().users().setCustomMetadata(user.id, { custom_metadata });
   } catch (err) {
-    console.error("app-store persist failed", err);
+    console.error("privy custom_metadata sync failed", err);
   }
 }
 
-function loadPersisted(): Store | null {
-  try {
-    const raw = fs.readFileSync(STORE_FILE, "utf8");
-    const data = JSON.parse(raw) as PersistedStore;
-    if (!Array.isArray(data.users)) return null;
-    return {
-      users: new Map(data.users.map((u) => [u.id, u])),
-      groups: new Map((data.groups ?? []).map((g) => [g.id, g])),
-      markets: new Map((data.markets ?? []).map((m) => [m.address, m])),
-      seeded: true,
-    };
-  } catch {
-    return null;
+let seedPromise: Promise<void> | null = null;
+
+/** Ensure DEMO24 exists (idempotent). */
+async function ensureDemoSeed(): Promise<void> {
+  if (!seedPromise) {
+    seedPromise = (async () => {
+      const g = await groups();
+      const existing = await g.findOne({ code: "DEMO24" });
+      if (existing) return;
+
+      const now = Date.now();
+      const [alice, bob] = demoUsers(now);
+      const group = demoGroup(alice.id, [alice.id, bob.id], now);
+      const u = await users();
+      await u.updateOne(
+        { _id: alice.id },
+        { $setOnInsert: { ...alice, _id: alice.id } },
+        { upsert: true },
+      );
+      await u.updateOne(
+        { _id: bob.id },
+        { $setOnInsert: { ...bob, _id: bob.id } },
+        { upsert: true },
+      );
+      await g.updateOne(
+        { _id: group.id },
+        { $setOnInsert: { ...group, _id: group.id } },
+        { upsert: true },
+      );
+    })().catch((err) => {
+      seedPromise = null;
+      throw err;
+    });
   }
+  await seedPromise;
 }
-
-function createStore(): Store {
-  const persisted = loadPersisted();
-  if (persisted) return persisted;
-
-  const store: Store = {
-    users: new Map(),
-    groups: new Map(),
-    markets: new Map(),
-    seeded: false,
-  };
-  seedDemoData(store);
-  store.seeded = true;
-  persistSoon(store);
-  return store;
-}
-
-const store: Store = (globalForStore.__groupbetStore ??= createStore());
 
 export const db = {
   // ---- Users -----------------------------------------------------------
-  getUser(id: ID): User | undefined {
-    return store.users.get(id);
+  async getUser(id: ID): Promise<User | undefined> {
+    await ensureDemoSeed();
+    const doc = await (await users()).findOne({ _id: id });
+    if (!doc) return undefined;
+    return { ...stripId(doc), id: doc.id ?? doc._id };
   },
-  getUserByPhone(phone: string): User | undefined {
+
+  async getUserByPhone(phone: string): Promise<User | undefined> {
+    await ensureDemoSeed();
     const needle = normalizePhone(phone);
-    return [...store.users.values()].find(
-      (u) => normalizePhone(u.phone) === needle,
-    );
+    const doc = await (await users()).findOne({ phone: needle });
+    if (!doc) {
+      // Legacy rows may store un-normalized phones.
+      const all = await (await users()).find({}).toArray();
+      const hit = all.find((u) => normalizePhone(u.phone) === needle);
+      if (!hit) return undefined;
+      return { ...stripId(hit), id: hit.id ?? hit._id };
+    }
+    return { ...stripId(doc), id: doc.id ?? doc._id };
   },
-  /** Reverse lookup, so on-chain trades can be shown with a name and face. */
-  getUserByWallet(walletAddress: string): User | undefined {
-    return [...store.users.values()].find(
-      (u) => u.walletAddress === walletAddress,
-    );
+
+  async getUserByWallet(walletAddress: string): Promise<User | undefined> {
+    if (!walletAddress) return undefined;
+    await ensureDemoSeed();
+    const doc = await (await users()).findOne({ walletAddress });
+    if (!doc) return undefined;
+    return { ...stripId(doc), id: doc.id ?? doc._id };
   },
-  createUser(user: User): User {
-    store.users.set(user.id, user);
-    persistSoon(store);
+
+  async createUser(user: User): Promise<User> {
+    await ensureDemoSeed();
+    await (await users()).insertOne({ ...user, _id: user.id });
+    void syncPrivyMetadata(user);
     return user;
   },
-  updateUser(id: ID, patch: Partial<User>): User | undefined {
-    const user = store.users.get(id);
-    if (!user) return undefined;
-    const next = { ...user, ...patch };
-    store.users.set(id, next);
-    persistSoon(store);
-    return next;
+
+  async updateUser(id: ID, patch: Partial<User>): Promise<User | undefined> {
+    await ensureDemoSeed();
+    const col = await users();
+    const result = await col.findOneAndUpdate(
+      { _id: id },
+      { $set: patch },
+      { returnDocument: "after" },
+    );
+    if (!result) return undefined;
+    const user: User = { ...stripId(result), id: result.id ?? result._id };
+    void syncPrivyMetadata(user);
+    return user;
   },
 
   // ---- Groups ----------------------------------------------------------
-  getGroup(id: ID): Group | undefined {
-    return store.groups.get(id);
+  async getGroup(id: ID): Promise<Group | undefined> {
+    await ensureDemoSeed();
+    const doc = await (await groups()).findOne({ _id: id });
+    if (!doc) return undefined;
+    return { ...stripId(doc), id: doc.id ?? doc._id };
   },
-  getGroupByCode(code: string): Group | undefined {
-    const upper = code.toUpperCase();
-    return [...store.groups.values()].find((g) => g.code === upper);
+
+  async getGroupByCode(code: string): Promise<Group | undefined> {
+    await ensureDemoSeed();
+    const doc = await (await groups()).findOne({ code: code.toUpperCase() });
+    if (!doc) return undefined;
+    return { ...stripId(doc), id: doc.id ?? doc._id };
   },
-  listGroupsForUser(userId: ID): Group[] {
-    return [...store.groups.values()]
-      .filter((g) => g.memberIds.includes(userId))
-      .sort((a, b) => b.createdAt - a.createdAt);
+
+  async listGroupsForUser(userId: ID): Promise<Group[]> {
+    await ensureDemoSeed();
+    const docs = await (await groups())
+      .find({ memberIds: userId })
+      .sort({ createdAt: -1 })
+      .toArray();
+    return docs.map((d) => ({ ...stripId(d), id: d.id ?? d._id }));
   },
-  createGroup(group: Group): Group {
-    store.groups.set(group.id, group);
-    persistSoon(store);
-    return group;
-  },
-  addMember(groupId: ID, userId: ID): Group | undefined {
-    const group = store.groups.get(groupId);
-    if (!group) return undefined;
-    if (!group.memberIds.includes(userId)) group.memberIds.push(userId);
-    persistSoon(store);
-    return group;
-  },
-  removeMember(groupId: ID, userId: ID): Group | undefined {
-    const group = store.groups.get(groupId);
-    if (!group) return undefined;
-    group.memberIds = group.memberIds.filter((id) => id !== userId);
-    persistSoon(store);
+
+  async createGroup(group: Group): Promise<Group> {
+    await ensureDemoSeed();
+    await (await groups()).insertOne({ ...group, _id: group.id });
     return group;
   },
 
-  // ---- Market metadata -------------------------------------------------
-  getMarket(address: string): Market | undefined {
-    return store.markets.get(address);
+  async addMember(groupId: ID, userId: ID): Promise<Group | undefined> {
+    await ensureDemoSeed();
+    const result = await (
+      await groups()
+    ).findOneAndUpdate(
+      { _id: groupId },
+      { $addToSet: { memberIds: userId } },
+      { returnDocument: "after" },
+    );
+    if (!result) return undefined;
+    return { ...stripId(result), id: result.id ?? result._id };
   },
-  listMarketsForGroup(groupId: ID): Market[] {
-    return [...store.markets.values()]
-      .filter((m) => m.groupId === groupId)
+
+  async removeMember(groupId: ID, userId: ID): Promise<Group | undefined> {
+    await ensureDemoSeed();
+    const result = await (
+      await groups()
+    ).findOneAndUpdate(
+      { _id: groupId },
+      { $pull: { memberIds: userId } },
+      { returnDocument: "after" },
+    );
+    if (!result) return undefined;
+    return { ...stripId(result), id: result.id ?? result._id };
+  },
+
+  // ---- Market metadata -------------------------------------------------
+  async getMarket(address: string): Promise<Market | undefined> {
+    await ensureDemoSeed();
+    const doc = await (await markets()).findOne({ _id: address });
+    if (!doc) return undefined;
+    const { _id: _, ...rest } = doc;
+    return rest as Market;
+  },
+
+  async listMarketsForGroup(groupId: ID): Promise<Market[]> {
+    await ensureDemoSeed();
+    const docs = await (await markets()).find({ groupId }).toArray();
+    return docs
+      .map((d) => {
+        const { _id: _, ...rest } = d;
+        return rest as Market;
+      })
       .sort((a, b) => {
         if (Boolean(a.pinned) !== Boolean(b.pinned)) return a.pinned ? -1 : 1;
         return b.createdAt - a.createdAt;
       });
   },
-  createMarket(market: Market): Market {
-    store.markets.set(market.address, market);
-    persistSoon(store);
+
+  async createMarket(market: Market): Promise<Market> {
+    await ensureDemoSeed();
+    await (await markets()).insertOne({ ...market, _id: market.address });
     return market;
   },
-  updateMarket(address: string, patch: Partial<Market>): Market | undefined {
-    const market = store.markets.get(address);
-    if (!market) return undefined;
-    const next = { ...market, ...patch };
-    store.markets.set(address, next);
-    persistSoon(store);
-    return next;
+
+  async updateMarket(
+    address: string,
+    patch: Partial<Market>,
+  ): Promise<Market | undefined> {
+    await ensureDemoSeed();
+    // Clear fields set to `undefined` (e.g. wiping resolution on retake).
+    const $set: Record<string, unknown> = {};
+    const $unset: Record<string, ""> = {};
+    for (const [k, v] of Object.entries(patch)) {
+      if (v === undefined) $unset[k] = "";
+      else $set[k] = v;
+    }
+    const update: Record<string, unknown> = {};
+    if (Object.keys($set).length) update.$set = $set;
+    if (Object.keys($unset).length) update.$unset = $unset;
+    if (!Object.keys(update).length) return this.getMarket(address);
+
+    const result = await (
+      await markets()
+    ).findOneAndUpdate({ _id: address }, update, { returnDocument: "after" });
+    if (!result) return undefined;
+    const { _id: _, ...rest } = result;
+    return rest as Market;
   },
-  /**
-   * Forget a market's metadata.
-   *
-   * **Off-chain only, and worth being clear about.** The on-chain market, its
-   * vault and everyone's positions are untouched — the program has no delete
-   * and collateral cannot be clawed back. This removes the question text and
-   * the group link, so the app stops showing it; holders can still redeem via
-   * the PDA. Deleting one with live positions strands people in the UI, which
-   * is why the route restricts it.
-   */
-  deleteMarket(address: string): boolean {
-    const ok = store.markets.delete(address);
-    if (ok) persistSoon(store);
-    return ok;
+
+  async deleteMarket(address: string): Promise<boolean> {
+    await ensureDemoSeed();
+    const res = await (await markets()).deleteOne({ _id: address });
+    return res.deletedCount > 0;
   },
 };
 
-export type { Store };
+/** Claim a World nullifier (anti-replay). Returns false if already used. */
+export async function claimWorldNullifier(
+  action: string,
+  nullifier: string,
+): Promise<boolean> {
+  try {
+    await (await getMongo()).collection("world_nullifiers").insertOne({
+      action,
+      nullifier: nullifier.toLowerCase(),
+      at: Date.now(),
+    });
+    return true;
+  } catch (err) {
+    // Duplicate key → already claimed.
+    if (
+      err &&
+      typeof err === "object" &&
+      "code" in err &&
+      (err as { code: number }).code === 11000
+    ) {
+      return false;
+    }
+    throw err;
+  }
+}

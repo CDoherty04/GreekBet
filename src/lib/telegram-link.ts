@@ -20,9 +20,9 @@ export async function absorbTelegramStarts(): Promise<{
   for (const msg of pulled.messages) {
     const pending = verifyDb.getLink(msg.payload);
     if (!pending || pending.expiresAt < Date.now()) continue;
-    const owner = db.getUser(pending.userId);
+    const owner = await db.getUser(pending.userId);
     if (!owner) continue;
-    db.updateUser(owner.id, {
+    await db.updateUser(owner.id, {
       telegramChatId: msg.chatId,
       telegramUsername: msg.username ?? owner.telegramUsername,
     });
@@ -33,8 +33,8 @@ export async function absorbTelegramStarts(): Promise<{
   return { linked };
 }
 
-export function chatIdForPhone(phone: string): string | undefined {
+export async function chatIdForPhone(phone: string): Promise<string | undefined> {
   const normalized = normalizePhone(phone);
-  const user = db.getUserByPhone(normalized);
+  const user = await db.getUserByPhone(normalized);
   return user?.telegramChatId || verifyDb.getChatByPhone(normalized);
 }

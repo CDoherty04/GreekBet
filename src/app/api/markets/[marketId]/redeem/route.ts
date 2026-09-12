@@ -20,7 +20,7 @@ export async function POST(
   if (!user.walletAddress) return fail("No wallet linked", 400);
 
   const { marketId } = await ctx.params;
-  const meta = db.getMarket(marketId);
+  const meta = await db.getMarket(marketId);
   if (!meta) return fail("Market not found", 404);
 
   const chain = getChainMarket(marketId);

@@ -32,22 +32,23 @@ export default function GroupDetailPage() {
   const now = useNow();
 
   const load = useCallback(async () => {
+    setError(null);
     const preview = await api.getGroup(groupId);
     setGroup(preview.group);
     setIsMember(preview.isMember);
     setMemberCount(preview.memberCount);
     setMembers(preview.members);
-    if (preview.isMember) {
-      const { markets } = await api.listMarkets(groupId);
-      setMarkets(markets);
-    } else {
-      setMarkets(preview.markets ?? []);
-    }
+    // getGroup already returns markets for members and non-members.
+    setMarkets(preview.markets ?? []);
   }, [groupId]);
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    if (user) void load().catch(() => setError("Could not load group"));
+    if (user) {
+      void load().catch((e) =>
+        setError(e instanceof Error ? e.message : "Could not load group"),
+      );
+    }
   }, [user, load]);
 
   async function join() {
@@ -101,7 +102,32 @@ export default function GroupDetailPage() {
     void runOwnerAction(m.address, () => api.deleteMarket(m.address));
   }
 
-  if (loading || !user || !group) return <Splash />;
+  if (loading || !user) return <Splash />;
+
+  if (!group) {
+    return (
+      <div className="flex flex-1 flex-col">
+        <TopBar title="Group" back />
+        <div className="flex flex-1 flex-col items-center justify-center gap-3 p-6 text-center">
+          {error ? (
+            <>
+              <p className="font-display text-xl font-bold uppercase text-no">
+                Could not load group
+              </p>
+              <p className="max-w-sm text-sm text-muted">{error}</p>
+              <p className="max-w-sm text-xs text-muted">
+                Groups are stored in MongoDB. Set{" "}
+                <code className="text-brand">MONGODB_URI</code> in{" "}
+                <code>.env.local</code> / Vercel, then create the group again.
+              </p>
+            </>
+          ) : (
+            <Splash />
+          )}
+        </div>
+      </div>
+    );
+  }
 
   const isOwner = group.ownerId === user.id;
   const active = (markets ?? []).filter((m) => !m.archived);

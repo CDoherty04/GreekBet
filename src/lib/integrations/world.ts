@@ -11,12 +11,11 @@
 
 import "server-only";
 
-import * as fs from "fs";
-import * as path from "path";
 import { createHash } from "crypto";
 import { hashSignal } from "@worldcoin/idkit-core/hashing";
 import { signRequest } from "@worldcoin/idkit-core/signing";
 import type { IDKitResult } from "@worldcoin/idkit-core";
+import { claimWorldNullifier } from "@/lib/store";
 
 export type WorldAction = "signup" | "resolve";
 
@@ -155,59 +154,11 @@ export function createRpSignature(action: string): RpSignaturePayload {
   };
 }
 
-const NULLIFIER_FILE = path.join(
-  process.cwd(),
-  ".data",
-  "world-nullifiers.json",
-);
-
-type NullifierRecord = { action: string; nullifier: string; at: number };
-
-function loadNullifiers(): Map<string, NullifierRecord> {
-  try {
-    const raw = JSON.parse(fs.readFileSync(NULLIFIER_FILE, "utf8")) as
-      | NullifierRecord[]
-      | { entries?: NullifierRecord[] };
-    const list = Array.isArray(raw) ? raw : (raw.entries ?? []);
-    return new Map(
-      list.map((e) => [`${e.action}:${e.nullifier.toLowerCase()}`, e]),
-    );
-  } catch {
-    return new Map();
-  }
-}
-
-function saveNullifiers(map: Map<string, NullifierRecord>): void {
-  try {
-    fs.mkdirSync(path.dirname(NULLIFIER_FILE), { recursive: true });
-    fs.writeFileSync(
-      NULLIFIER_FILE,
-      JSON.stringify([...map.values()], null, 2),
-      "utf8",
-    );
-  } catch (err) {
-    console.error("world nullifier persist failed", err);
-  }
-}
-
-const globalForNullifiers = globalThis as unknown as {
-  __worldNullifiers?: Map<string, NullifierRecord>;
-};
-
-function nullifierStore(): Map<string, NullifierRecord> {
-  if (!globalForNullifiers.__worldNullifiers) {
-    globalForNullifiers.__worldNullifiers = loadNullifiers();
-  }
-  return globalForNullifiers.__worldNullifiers;
-}
-
-export function claimNullifier(action: string, nullifier: string): boolean {
-  const store = nullifierStore();
-  const key = `${action}:${nullifier.toLowerCase()}`;
-  if (store.has(key)) return false;
-  store.set(key, { action, nullifier, at: Date.now() });
-  saveNullifiers(store);
-  return true;
+export async function claimNullifier(
+  action: string,
+  nullifier: string,
+): Promise<boolean> {
+  return claimWorldNullifier(action, nullifier);
 }
 
 function extractNullifier(result: IDKitResult): {
@@ -296,7 +247,7 @@ export async function verifySelfieProof(input: {
     const nullifier = stub.responses[0]?.nullifier;
     if (!nullifier) throw new Error("Stub proof missing nullifier");
     assertSignal(signal, stub.responses[0]?.signal_hash);
-    if (!claimNullifier(action, nullifier)) {
+    if (!(await claimNullifier(action, nullifier))) {
       throw new Error("This Selfie Check proof was already used");
     }
     return {
@@ -341,7 +292,7 @@ export async function verifySelfieProof(input: {
     throw new Error(`Proof action mismatch (expected ${action})`);
   }
 
-  if (!claimNullifier(action, nullifier)) {
+  if (!(await claimNullifier(action, nullifier))) {
     throw new Error("This Selfie Check proof was already used");
   }
 

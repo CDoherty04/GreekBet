@@ -25,17 +25,19 @@ export async function GET(
   if (!user) return fail("Not signed in", 401);
 
   const { groupId } = await ctx.params;
-  const group = db.getGroup(groupId);
+  const group = await db.getGroup(groupId);
   if (!group?.memberIds.includes(user.id)) {
     return fail("Group not found", 404);
   }
 
   const chain = projection();
-  const metas = db.listMarketsForGroup(groupId);
+  const metas = await db.listMarketsForGroup(groupId);
   // Settle due resolutions after responding; this list may lag by one load.
   scheduleDueSettlements(metas, (address) => chain.get(address));
-  const markets = metas.map((m) =>
-    toMarketView(m, chain.get(m.address), user.walletAddress),
+  const markets = await Promise.all(
+    metas.map((m) =>
+      toMarketView(m, chain.get(m.address), user.walletAddress),
+    ),
   );
   return ok({ markets });
 }
@@ -56,7 +58,7 @@ export async function POST(
   if (!user.walletAddress) return fail("No wallet linked", 400);
 
   const { groupId } = await ctx.params;
-  const group = db.getGroup(groupId);
+  const group = await db.getGroup(groupId);
   if (!group?.memberIds.includes(user.id)) {
     return fail("Group not found", 404);
   }

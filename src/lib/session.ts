@@ -22,7 +22,7 @@ export async function getCurrentUser(): Promise<User | null> {
     const token = tokenFromAuthorization(h.get("authorization"));
     if (!token) return null;
     const { privyId } = await verifyAccessToken(token);
-    return db.getUser(privyId) ?? null;
+    return (await db.getUser(privyId)) ?? null;
   } catch {
     return null;
   }

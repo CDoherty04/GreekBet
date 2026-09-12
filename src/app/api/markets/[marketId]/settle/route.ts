@@ -24,10 +24,10 @@ export async function POST(
   if (!user) return fail("Not signed in", 401);
 
   const { marketId } = await ctx.params;
-  const meta = db.getMarket(marketId);
+  const meta = await db.getMarket(marketId);
   if (!meta) return fail("Market not found", 404);
 
-  const group = db.getGroup(meta.groupId);
+  const group = await db.getGroup(meta.groupId);
   if (!group?.memberIds.includes(user.id)) {
     return fail("Market not found", 404);
   }
@@ -54,8 +54,8 @@ export async function POST(
   const settle = await settleMarket(marketId);
 
   return ok({
-    market: toMarketView(
-      db.getMarket(marketId) ?? meta,
+    market: await toMarketView(
+      (await db.getMarket(marketId)) ?? meta,
       getChainMarket(marketId),
       user.walletAddress,
     ),

@@ -18,9 +18,9 @@ export async function POST(req: Request) {
   const code = body?.code?.trim().toUpperCase();
   if (!code) return fail("Invite code is required");
 
-  const group = db.getGroupByCode(code);
+  const group = await db.getGroupByCode(code);
   if (!group) return fail("No group found for that code", 404);
 
-  db.addMember(group.id, user.id);
+  await db.addMember(group.id, user.id);
   return ok({ group });
 }

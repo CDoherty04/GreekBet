@@ -14,7 +14,7 @@ export async function DELETE(
   if (!user) return fail("Not signed in", 401);
 
   const { groupId, userId } = await ctx.params;
-  const group = db.getGroup(groupId);
+  const group = await db.getGroup(groupId);
   if (!group) return fail("Group not found", 404);
   if (group.ownerId !== user.id) {
     return fail("Only the group owner can remove members", 403);
@@ -26,6 +26,6 @@ export async function DELETE(
     return fail("Not a member of this group", 404);
   }
 
-  db.removeMember(groupId, userId);
+  await db.removeMember(groupId, userId);
   return ok({ ok: true as const });
 }

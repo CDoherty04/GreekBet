@@ -214,7 +214,7 @@ export default function OnboardingPage() {
         </h1>
         {authenticated && !user && (
           <p className="mt-3 text-sm text-muted">
-            You’re signed in — finish your profile to continue.
+            Finish your profile to continue.
           </p>
         )}
       </div>
@@ -312,7 +312,7 @@ export default function OnboardingPage() {
         <div className="flex flex-1 flex-col gap-4">
           <p className="mb-2 text-center text-sm text-muted">
             Prove you’re a live person with World Selfie Check. This gates
-            accounts against bots — we don’t store your selfie.
+            accounts against bots.
           </p>
           {!solanaAddress && (
             <p className="text-center text-xs text-muted">

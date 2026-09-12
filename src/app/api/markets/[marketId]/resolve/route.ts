@@ -103,10 +103,10 @@ export async function POST(
   if (!user) return fail("Not signed in", 401);
 
   const { marketId } = await ctx.params;
-  const meta = db.getMarket(marketId);
+  const meta = await db.getMarket(marketId);
   if (!meta) return fail("Market not found", 404);
 
-  const group = db.getGroup(meta.groupId);
+  const group = await db.getGroup(meta.groupId);
   if (!group?.memberIds.includes(user.id)) {
     return fail("Market not found", 404);
   }
@@ -157,14 +157,14 @@ export async function POST(
 
   // The AI calls take seconds: re-check against the current state so a
   // concurrent submission, clear, or settle isn't overwritten.
-  const current = db.getMarket(marketId);
+  const current = await db.getMarket(marketId);
   if (!current) return fail("Market not found", 404);
   const blockedNow = replacementBlocked(current, group, user);
   if (blockedNow) return fail(blockedNow, 409);
 
   const record = buildRecord(prediction, user.id, Date.now());
   const { verdict, confidence } = prediction.validation;
-  const updated = db.updateMarket(marketId, {
+  const updated = (await db.updateMarket(marketId, {
     resolution: record,
     resolutionImageUrl: body.imageDataUrl,
     resolutionNote: prediction.description,
@@ -173,7 +173,7 @@ export async function POST(
     // Backwards-compatible mirrors of the verdict; `resolution` is the truth.
     aiPrediction: verdict === "yes" || verdict === "no" ? verdict : undefined,
     aiConfidence: confidence,
-  })!;
+  }))!;
 
   const settle = isSettleDue(updated, getChainMarket(marketId))
     ? await settleMarket(marketId)
@@ -181,8 +181,8 @@ export async function POST(
 
   // `toMarketView` redacts for a non-owner submitter.
   return ok({
-    market: toMarketView(
-      db.getMarket(marketId) ?? updated,
+    market: await toMarketView(
+      (await db.getMarket(marketId)) ?? updated,
       getChainMarket(marketId),
       user.walletAddress,
     ),
@@ -199,10 +199,10 @@ export async function DELETE(
   if (!user) return fail("Not signed in", 401);
 
   const { marketId } = await ctx.params;
-  const meta = db.getMarket(marketId);
+  const meta = await db.getMarket(marketId);
   if (!meta) return fail("Market not found", 404);
 
-  const group = db.getGroup(meta.groupId);
+  const group = await db.getGroup(meta.groupId);
   if (!group?.memberIds.includes(user.id)) {
     return fail("Market not found", 404);
   }
@@ -219,7 +219,7 @@ export async function DELETE(
     return fail("This event is already being settled — the photo can't be cleared", 409);
   }
 
-  const updated = db.updateMarket(marketId, {
+  const updated = (await db.updateMarket(marketId, {
     resolution: undefined,
     resolutionImageUrl: undefined,
     resolutionNote: undefined,
@@ -227,9 +227,9 @@ export async function DELETE(
     aiModel: undefined,
     aiPrediction: undefined,
     aiConfidence: undefined,
-  })!;
+  }))!;
 
   return ok({
-    market: toMarketView(updated, chain, user.walletAddress),
+    market: await toMarketView(updated, chain, user.walletAddress),
   });
 }

@@ -20,7 +20,7 @@ export async function POST(req: Request) {
   const body = await readJson<Body>(req);
   const username = body?.username?.trim().replace(/^@/, "") || undefined;
   if (username) {
-    db.updateUser(user.id, { telegramUsername: username });
+    await db.updateUser(user.id, { telegramUsername: username });
   }
 
   if (!telegramBotConfigured()) {
