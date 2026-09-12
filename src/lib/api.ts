@@ -237,15 +237,14 @@ export const api = {
 
   /**
    * Submit a resolution photo after World Selfie Check: describe → validate →
-   * policy. `settle` is set when the server tried to settle straight away
-   * (close time already passed). 409 once a record exists unless the caller is
-   * the owner.
+   * policy, then attempt on-chain settle. 409 once a record exists unless the
+   * caller is the owner.
    */
   resolveMarket: (
     marketId: string,
     input: { imageDataUrl: string; worldId: string },
   ) =>
-    request<{ market: MarketView; settle: SettleResult | null }>(
+    request<{ market: MarketView; settle: SettleResult }>(
       `/api/markets/${marketId}/resolve`,
       { method: "POST", body: JSON.stringify(input) },
     ),
@@ -256,14 +255,14 @@ export const api = {
       method: "DELETE",
     }),
 
-  /** Owner: pick the outcome. Settles now if close time passed, else `waiting`. */
+  /** Owner: pick the outcome. Settles on chain immediately when possible. */
   confirmResolution: (marketId: string, outcome: Side) =>
     request<{ market: MarketView; settle: SettleResult }>(
       `/api/markets/${marketId}/resolve/confirm`,
       { method: "POST", body: JSON.stringify({ outcome }) },
     ),
 
-  /** Owner: settle a `pending`/`failed` record on chain. 409 before close. */
+  /** Owner: settle a `pending`/`failed` record on chain. */
   settleMarket: (marketId: string) =>
     request<{ market: MarketView; settle: SettleResult }>(
       `/api/markets/${marketId}/settle`,

@@ -10,7 +10,7 @@ import { PublicKey } from "@solana/web3.js";
 /** Deployed program id (devnet). Overridable for a local validator. */
 export const PROGRAM_ID = new PublicKey(
   process.env.NEXT_PUBLIC_GREEKBET_PROGRAM_ID ??
-    "GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ",
+    "5YoHVvLTG5hxe2DoDvazNyFZkhLysrm9p6nbySyMYi5t",
 );
 
 export const RPC_URL =

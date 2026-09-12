@@ -1,5 +1,5 @@
 {
-  "address": "GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ",
+  "address": "5YoHVvLTG5hxe2DoDvazNyFZkhLysrm9p6nbySyMYi5t",
   "metadata": {
     "name": "greekbet",
     "version": "0.1.0",
@@ -175,7 +175,9 @@
     {
       "name": "close_market",
       "docs": [
-        "Mark a market closed once `close_time` has passed. Permissionless.",
+        "Mark a market closed once `close_time` has passed, or earlier when",
+        "signed by the market's resolver (so a reached conclusion can settle",
+        "without waiting out the trading window). Permissionless after close.",
         "",
         "**Owned by T06.**"
       ],
@@ -193,7 +195,7 @@
         {
           "name": "market",
           "docs": [
-            "The market to close. Must currently be `Open` and past its `close_time`."
+            "The market to close. Must currently be `Open`."
           ],
           "writable": true,
           "pda": {
@@ -221,6 +223,14 @@
               }
             ]
           }
+        },
+        {
+          "name": "authority",
+          "docs": [
+            "Crank signer. Anyone after `close_time`; the market's resolver may",
+            "close earlier to settle a reached conclusion."
+          ],
+          "signer": true
         }
       ],
       "args": []
@@ -1126,16 +1136,14 @@
           {
             "name": "closed_at",
             "docs": [
-              "`Clock::unix_timestamp` when the crank actually landed. Always",
-              "`>= close_time`, and the gap is however long it took someone to crank."
+              "`Clock::unix_timestamp` when the crank actually landed."
             ],
             "type": "i64"
           },
           {
             "name": "q_yes",
             "docs": [
-              "LMSR state frozen at close, so an indexer does not have to re-read the",
-              "account to know the final supply."
+              "LMSR state frozen at close."
             ],
             "type": "u64"
           },

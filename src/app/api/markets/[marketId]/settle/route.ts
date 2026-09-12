@@ -1,9 +1,9 @@
 /**
  * /api/markets/[marketId]/settle — owner's "Settle now".
  *
- * Awaits `settleMarket` for a `pending` or `failed` resolution record once the
- * market's close time has passed. The program can't close a market earlier, so
- * this refuses (409) before close rather than sending a doomed transaction.
+ * Awaits `settleMarket` for a `pending` or `failed` resolution record.
+ * The resolver may close on chain before `close_time` once a conclusion is
+ * locked in; if the deployed program is older, settle returns `waiting`.
  *
  * A failed attempt still returns 200: the outcome is in `settle`
  * (`{ state: "failed", error }`) and the record is marked `failed`.
@@ -42,14 +42,6 @@ export async function POST(
 
   const chain = await getChainMarket(marketId);
   if (!chain) return fail("Market is not indexed yet", 409);
-  // Checked here, not via `isSettleDue`: that treats an already-resolved chain
-  // market as due regardless of close time, so lazy loads can repair records.
-  if (chain.closeTime * 1000 > Date.now()) {
-    return fail(
-      "This event can't be settled until its close time has passed",
-      409,
-    );
-  }
 
   const settle = await settleMarket(marketId);
 

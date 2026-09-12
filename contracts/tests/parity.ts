@@ -467,7 +467,7 @@ describe("parity: on-chain results match reference/vectors/trades.json exactly",
     ).to.equal(true);
 
     await waitForOnChainTime(fx.closeTime);
-    await rpcWithEvents(program, program.methods.closeMarket().accountsPartial({ market: fx.market }));
+    await rpcWithEvents(program, program.methods.closeMarket().accountsPartial({ market: fx.market, authority: program.provider.publicKey }));
     await rpcWithEvents(
       program,
       program.methods

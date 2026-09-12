@@ -23,8 +23,8 @@ export default function NewMarketPage() {
   const { sendBase64, ready } = usePrivySend();
   const router = useRouter();
   const [title, setTitle] = useState("");
-  const [durationValue, setDurationValue] = useState("1");
-  const [unitIdx, setUnitIdx] = useState(2);
+  const [durationValue, setDurationValue] = useState("15");
+  const [unitIdx, setUnitIdx] = useState(0);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

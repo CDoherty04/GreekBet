@@ -350,7 +350,7 @@ describe("lifecycle: create -> buy -> sell -> close -> resolve -> redeem", () =>
 
     const tx = await rpcWithEvents(
       program,
-      program.methods.closeMarket().accountsPartial({ market: fx.market })
+      program.methods.closeMarket().accountsPartial({ market: fx.market, authority: program.provider.publicKey })
     );
     const ev = requireEvent(tx, "marketClosed");
     cu["close_market"] = tx.computeUnits;

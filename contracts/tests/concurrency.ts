@@ -223,7 +223,7 @@ describe("concurrency: interleaved multi-user trading never puts the vault behin
     await waitForOnChainTime(fx.closeTime);
     await rpcWithEvents(
       program,
-      program.methods.closeMarket().accountsPartial({ market: fx.market })
+      program.methods.closeMarket().accountsPartial({ market: fx.market, authority: program.provider.publicKey })
     );
     await assertSolvent(program, fx, ledger, `${label} after close`);
 

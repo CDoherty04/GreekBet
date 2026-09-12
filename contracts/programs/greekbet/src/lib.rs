@@ -49,7 +49,7 @@ pub use errors::GreekBetError;
 pub use instructions::*;
 pub use state::{Market, MarketStatus, Outcome, UserPosition};
 
-declare_id!("GRUTmtYopUczvS5m62YAvctbS9TTrbznnnj5GmFHumSZ");
+declare_id!("5YoHVvLTG5hxe2DoDvazNyFZkhLysrm9p6nbySyMYi5t");
 
 #[program]
 pub mod greekbet {
@@ -113,7 +113,9 @@ pub mod greekbet {
         instructions::sell_shares::sell_shares_handler(ctx, outcome, share_amount, min_usdc_out)
     }
 
-    /// Mark a market closed once `close_time` has passed. Permissionless.
+    /// Mark a market closed once `close_time` has passed, or earlier when
+    /// signed by the market's resolver (so a reached conclusion can settle
+    /// without waiting out the trading window). Permissionless after close.
     ///
     /// **Owned by T06.**
     pub fn close_market(ctx: Context<CloseMarket>) -> Result<()> {

@@ -262,14 +262,21 @@ export async function buildSellSharesTx(input: {
 
 export async function closeMarket(input: {
   payer: Keypair;
+  /** Defaults to `payer`. Pass the resolver to close before `close_time`. */
+  authority?: Keypair;
   market: PublicKey;
 }): Promise<string> {
-  const program = programFor(input.payer);
+  const authority = input.authority ?? input.payer;
+  const program = programFor(authority);
   const ix = await program.methods
     .closeMarket()
-    .accounts({ market: input.market })
+    .accounts({ market: input.market, authority: authority.publicKey })
     .instruction();
-  return sendAndConfirm([ix], [input.payer], input.payer.publicKey);
+  const signers =
+    authority.publicKey.equals(input.payer.publicKey)
+      ? [input.payer]
+      : [input.payer, authority];
+  return sendAndConfirm([ix], signers, input.payer.publicKey);
 }
 
 export async function resolveMarket(input: {

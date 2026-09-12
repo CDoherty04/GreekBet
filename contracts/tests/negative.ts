@@ -397,17 +397,38 @@ describe("negative: every failure path fails with its own error code", () => {
   // close_market / resolve_market ordering
   // -------------------------------------------------------------------------
 
-  it("close_market before close_time -> CloseTimeNotReached", async function () {
+  it("close_market before close_time by non-resolver -> CloseTimeNotReached", async function () {
     this.timeout(120_000);
     await expectError(
       program.methods
         .closeMarket()
-        .accountsPartial({ market: open.market })
+        .accountsPartial({
+          market: open.market,
+          authority: program.provider.publicKey,
+        })
         .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" }),
       ERR.CloseTimeNotReached,
-      "crank an hour early"
+      "crank an hour early as a stranger"
     );
     expect((await readMarket(program, open.market)).status).to.equal("open");
+  });
+
+  it("close_market before close_time by resolver -> ok", async function () {
+    this.timeout(120_000);
+    const early = await createMarketFixture(collateral, {
+      b: B,
+      closeTimeSecondsFromNow: 3600,
+      question: `early-close-${Date.now()}`,
+    });
+    await rpcWithEvents(
+      program,
+      program.methods.closeMarket().accountsPartial({
+        market: early.market,
+        authority: early.resolver.publicKey,
+      }),
+      [early.resolver]
+    );
+    expect((await readMarket(program, early.market)).status).to.equal("closed");
   });
 
   it("resolve_market before close_market -> MarketNotClosed", async function () {
@@ -499,13 +520,16 @@ describe("negative: every failure path fails with its own error code", () => {
       this.timeout(120_000);
       await rpcWithEvents(
         program,
-        program.methods.closeMarket().accountsPartial({ market: fx.market })
+        program.methods.closeMarket().accountsPartial({ market: fx.market, authority: program.provider.publicKey })
       );
       expect((await readMarket(program, fx.market)).status).to.equal("closed");
       await expectError(
         program.methods
           .closeMarket()
-          .accountsPartial({ market: fx.market })
+          .accountsPartial({
+            market: fx.market,
+            authority: program.provider.publicKey,
+          })
           .rpc({ commitment: "confirmed", preflightCommitment: "confirmed" }),
         ERR.MarketNotOpen,
         "close an already-closed market"

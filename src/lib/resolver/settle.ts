@@ -193,9 +193,8 @@ function isRetryable(record: ResolutionRecord, now: number): boolean {
  * Whether a trigger should call {@link settleMarket} for this market.
  *
  * Due = record is `pending`, `failed`, or stale `settling`; it has an outcome;
- * the chain market is indexed; and close time has passed. A market already
- * `resolved` on chain is due regardless of close time — settling it only
- * reconciles the record and sends nothing.
+ * the chain market is indexed. Close time is no longer required: the resolver
+ * may close early on chain once a conclusion is locked in.
  */
 export function isSettleDue(
   market: Market,
@@ -205,8 +204,7 @@ export function isSettleDue(
   const record = market.resolution;
   if (!record?.outcome || !isRetryable(record, now)) return false;
   if (!chain) return false;
-  if (chain.status === "resolved") return true;
-  return chain.closeTime * 1000 <= now;
+  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -220,7 +218,11 @@ export interface SettlerDeps {
     patch: Partial<Market>,
   ): Promise<Market | undefined>;
   getChainMarket(address: string): Promise<ChainMarket | undefined>;
-  closeMarket(input: { payer: Keypair; market: PublicKey }): Promise<string>;
+  closeMarket(input: {
+    payer: Keypair;
+    authority?: Keypair;
+    market: PublicKey;
+  }): Promise<string>;
   resolveMarket(input: {
     resolver: Keypair;
     payer?: Keypair;
@@ -339,11 +341,7 @@ export function createSettler(deps: SettlerDeps): Settler {
       return settledFromChain(marketId, record, chain.winningOutcome);
     }
 
-    // Step 4.
-    const closesAt = chain.closeTime * 1000;
-    if (closesAt > now) return { state: "waiting", closesAt };
-
-    // Step 5.
+    // Step 4 — close (resolver may close before close_time) then resolve.
     const previousStatus = record.status;
     await patchRecord(marketId, {
       status: "settling",
@@ -358,21 +356,25 @@ export function createSettler(deps: SettlerDeps): Settler {
       const payer = deps.feePayerKeypair();
       const resolver = deps.resolverKeypair();
 
-      // Step 6. Don't wait for the projection to show `closed` — it lags.
+      // Step 5. Don't wait for the projection to show `closed` — it lags.
+      // Pass the resolver as authority so close succeeds before close_time.
       if (chain.status === "open") {
         try {
-          closeSignature = await deps.closeMarket({ payer, market });
+          closeSignature = await deps.closeMarket({
+            payer,
+            authority: resolver,
+            market,
+          });
           await patchRecord(marketId, { closeSignature, updatedAt: deps.now() });
         } catch (err) {
           const code = programError(err)?.code;
           if (code === ERR.CloseTimeNotReached) {
-            // Wall clock is past close but the cluster clock isn't yet. Not a
-            // failure: put the record back and let the next trigger retry.
+            // Deployed program predates early-close — wait out close_time.
             await patchRecord(marketId, {
               status: previousStatus,
               updatedAt: deps.now(),
             });
-            return { state: "waiting", closesAt };
+            return { state: "waiting", closesAt: chain.closeTime * 1000 };
           }
           if (code !== ERR.MarketNotOpen) throw err;
           // MarketNotOpen: someone else closed (or resolved) it. Continue.

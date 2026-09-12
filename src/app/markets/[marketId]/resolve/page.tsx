@@ -25,7 +25,7 @@ import {
 } from "@/components/WorldSelfieCheck";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
-import { Countdown, useNow } from "@/components/Countdown";
+import { useNow } from "@/components/Countdown";
 import { useRequireUser } from "@/components/SessionProvider";
 import { api, ApiError } from "@/lib/api";
 import type {
@@ -364,7 +364,7 @@ function ResolveScreen({
         <p className="text-center text-xs text-muted">
           {closed
             ? "Close time has passed — your pick settles on chain right away."
-            : "Your pick is locked in and settles when the event closes."}
+            : "Your pick locks in and can settle on chain immediately."}
         </p>
         <div className="mt-auto grid grid-cols-2 gap-3">
           <Button
@@ -421,17 +421,9 @@ function ResolveScreen({
         </div>
         {!failed && (
           <p className="text-sm text-muted">
-            {closed ? (
-              "Close time has passed — settling shortly."
-            ) : (
-              <>
-                Settles automatically in{" "}
-                <Countdown
-                  expiresAt={market.expiresAt}
-                  className="font-semibold tabular-nums text-foreground"
-                />
-              </>
-            )}
+            {closed
+              ? "Close time has passed — settling on chain."
+              : "Conclusion locked in — settle on chain now (stops trading)."}
           </p>
         )}
       </Card>
@@ -442,16 +434,11 @@ function ResolveScreen({
         <Button
           variant={failed ? "primary" : "secondary"}
           loading={busy === "settle"}
-          disabled={busy !== null || !closed}
+          disabled={busy !== null}
           onClick={onSettle}
         >
           {failed ? "Retry settlement" : "Settle now"}
         </Button>
-        {!closed && (
-          <p className="text-center text-xs text-muted">
-            Settle now unlocks once the event closes.
-          </p>
-        )}
       </div>
       {retake}
     </>
@@ -459,7 +446,7 @@ function ResolveScreen({
 }
 
 const MEMBER_STATUS_COPY: Record<ResolutionStatus, string> = {
-  pending: "Settles automatically when the event closes",
+  pending: "Settling on chain…",
   needs_owner: "Waiting for the owner to decide",
   settling: "Settling on chain…",
   failed: "Settlement is retrying",
@@ -600,7 +587,7 @@ function describeSettle(settle: SettleResult): Flash {
     case "waiting":
       return {
         tone: "ok",
-        text: `Locked in — settles at close (${formatTime(settle.closesAt)}).`,
+        text: `Waiting for on-chain close (${formatTime(settle.closesAt)}) — upgrade the program for instant settle, or retry after that time.`,
       };
     case "skipped":
       return { tone: "ok", text: settle.reason };

@@ -836,7 +836,7 @@ describe("devnet lifecycle: create -> buy -> sell -> close -> resolve -> redeem"
     const now = await onChainUnixTime();
     if (now < closeTime) {
       await expectError(
-        sendExpectingFailure(program.methods.closeMarket().accountsPartial({ market }), []),
+        sendExpectingFailure(program.methods.closeMarket().accountsPartial({ market, authority: program.provider.publicKey }), []),
         ERR.CloseTimeNotReached,
         "close before close_time"
       );
@@ -849,7 +849,7 @@ describe("devnet lifecycle: create -> buy -> sell -> close -> resolve -> redeem"
 
     const tx = await record(
       program,
-      program.methods.closeMarket().accountsPartial({ market }),
+      program.methods.closeMarket().accountsPartial({ market, authority: program.provider.publicKey }),
       [],
       "close_market"
     );

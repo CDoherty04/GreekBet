@@ -5,9 +5,9 @@
  *
  * Requires a resolution record (a photo was submitted). Sets the record to
  * `pending` with `source: "owner"` — overriding the AI verdict if it differs —
- * and then settles on chain via `settleMarket` if close time has passed;
- * otherwise the response carries `{ state: "waiting" }` and a later trigger
- * settles it.
+ * and then settles on chain via `settleMarket` immediately (resolver may close
+ * early). If the deployed program cannot close yet, the response carries
+ * `{ state: "waiting" }` and a later trigger settles it.
  *
  * Settlement is irreversible: `resolve_market` writes the winning outcome and
  * the program offers no way to change it. Nothing is paid out here — holders
@@ -18,7 +18,7 @@ import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
 import { toMarketView } from "@/lib/markets";
-import { isSettleDue, settleMarket } from "@/lib/resolver/settle";
+import { settleMarket } from "@/lib/resolver/settle";
 import type { ResolutionRecord, SettleResult } from "@/lib/resolver/types";
 import { getChainMarket } from "@/lib/chain/projection";
 import type { Side } from "@/types";
@@ -74,9 +74,7 @@ export async function POST(
   delete next.error;
   const updated = ((await db.updateMarket(marketId, { resolution: next })))!;
 
-  const settle: SettleResult = isSettleDue(updated, chain)
-    ? await settleMarket(marketId)
-    : { state: "waiting", closesAt: chain.closeTime * 1000 };
+  const settle: SettleResult = await settleMarket(marketId);
 
   return ok({
     market: await toMarketView(

@@ -41,7 +41,7 @@ import {
   type Resolution,
 } from "@/lib/integrations/resolver";
 import { ResolverError } from "@/lib/resolver/errors";
-import { isSettleDue, settleMarket } from "@/lib/resolver/settle";
+import { settleMarket } from "@/lib/resolver/settle";
 import type { ResolutionRecord } from "@/lib/resolver/types";
 import { getChainMarket } from "@/lib/chain/projection";
 import type { Group, Market, User } from "@/types";
@@ -175,9 +175,7 @@ export async function POST(
     aiConfidence: confidence,
   }))!;
 
-  const settle = isSettleDue(updated, await getChainMarket(marketId))
-    ? await settleMarket(marketId)
-    : null;
+  const settle = await settleMarket(marketId);
 
   // `toMarketView` redacts for a non-owner submitter.
   return ok({

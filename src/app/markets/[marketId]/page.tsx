@@ -586,7 +586,7 @@ function ResolvedPanel({
 }
 
 const RESOLUTION_STATUS_COPY: Record<ResolutionStatus, string> = {
-  pending: "Settles automatically when the event closes",
+  pending: "Settling on chain…",
   needs_owner: "Waiting for the owner to decide",
   settling: "Settling on chain…",
   failed: "Settlement is retrying",
@@ -619,7 +619,7 @@ function ResolutionNotice({
           : ownerView && res.status === "pending" && res.outcome
             ? `Locked in ${res.outcome.toUpperCase()} (${
                 res.source === "owner" ? "your call" : "AI"
-              }) — settles when the event closes.`
+              }) — settle on chain when ready.`
             : RESOLUTION_STATUS_COPY[res.status]}
       </p>
     </Card>
