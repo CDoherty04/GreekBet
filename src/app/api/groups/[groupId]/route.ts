@@ -30,7 +30,7 @@ export async function GET(
   ).filter((u): u is User => Boolean(u));
 
   // One projection read for the whole list rather than per market.
-  const chain = projection();
+  const chain = await projection();
   const allMarkets = await db.listMarketsForGroup(groupId);
   // Settle due resolutions after responding; this list may lag by one load.
   scheduleDueSettlements(allMarkets, (address) => chain.get(address));

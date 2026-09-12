@@ -7,5 +7,7 @@ export { Indexer, consoleLogger, type IndexerOptions, type IndexerStats, type Lo
 export { RpcChainSource, isTransient, type ChainSource, type RpcOptions } from "./rpc";
 export type { OutputAdapter } from "./output/adapter";
 export { JsonlOutput, type JsonlOutputOptions } from "./output/jsonl";
+export { MongoOutput, type MongoOutputOptions } from "./output/mongo";
+export { MultiOutput } from "./output/multi";
 export { MemoryOutput, FailingOutput } from "./output/memory";
 export * from "./types";

@@ -1,10 +1,8 @@
 /**
  * The indexer's event stream, folded into the state the UI renders.
  *
- * This is the consumer the indexer plan left deliberately unbuilt: the indexer
- * emits parsed events to JSONL and something else persists or projects them.
- * This is that something else — an in-memory projection, rebuilt by replaying
- * the file.
+ * Prefer MongoDB `chain_events` when `MONGODB_URI` is set (Vercel + a remote
+ * indexer). Fall back to the local JSONL file for offline demos.
  *
  * ## Why events rather than reading accounts
  *
@@ -12,17 +10,6 @@
  * `q_yes`/`q_no` but no price, so `price_yes_after` exists only in the trade
  * events. Any odds display or price history has to come from the stream;
  * account snapshots cannot produce it.
- *
- * Replaying is also cheap and self-healing: the file is append-only and the
- * events are already deduplicated and slot-ordered, so a fold is total and
- * order-independent bugs cannot creep in from partial updates.
- *
- * ## What this is not
- *
- * Not durable, and not a database. The projection is rebuilt from the JSONL on
- * demand and cached briefly. That is the right shape while the file is small;
- * a real deployment would have the indexer write to Postgres and this module
- * would query it instead. The interface below would not change.
  */
 
 import "server-only";
@@ -31,6 +18,7 @@ import * as fs from "fs";
 import * as path from "path";
 
 import { UNIT } from "./config";
+import { getMongo } from "@/lib/db/mongo";
 
 /** Mirrors the indexer's wire format (`indexer/src/types.ts`). */
 interface RawEvent {
@@ -205,23 +193,36 @@ function apply(markets: Map<string, ChainMarket>, ev: RawEvent): void {
   }
 }
 
-interface Cached {
+interface FileCached {
   markets: Map<string, ChainMarket>;
   mtimeMs: number;
   size: number;
 }
 
+interface MongoCached {
+  markets: Map<string, ChainMarket>;
+  at: number;
+  count: number;
+}
+
+const MONGO_CACHE_MS = 1_500;
+
 const globalForProjection = globalThis as unknown as {
-  __greekbetProjection?: Cached;
+  __greekbetProjectionFile?: FileCached;
+  __greekbetProjectionMongo?: MongoCached;
 };
 
-/**
- * Read the stream and fold it.
- *
- * Cached against the file's mtime and size so a request that changes nothing
- * does not re-read the file, while an append is picked up immediately.
- */
-export function projection(): Map<string, ChainMarket> {
+function useMongo(): boolean {
+  return Boolean(process.env.MONGODB_URI?.trim());
+}
+
+function foldEvents(events: RawEvent[]): Map<string, ChainMarket> {
+  const markets = new Map<string, ChainMarket>();
+  for (const ev of events) apply(markets, ev);
+  return markets;
+}
+
+function projectionFromFile(): Map<string, ChainMarket> {
   let stat: fs.Stats;
   try {
     // turbopackIgnore: the path is configurable, so the bundler cannot prove it
@@ -235,24 +236,25 @@ export function projection(): Map<string, ChainMarket> {
     return new Map();
   }
 
-  const cached = globalForProjection.__greekbetProjection;
+  const cached = globalForProjection.__greekbetProjectionFile;
   if (cached && cached.mtimeMs === stat.mtimeMs && cached.size === stat.size) {
     return cached.markets;
   }
 
-  const markets = new Map<string, ChainMarket>();
+  const events: RawEvent[] = [];
   const raw = fs.readFileSync(/* turbopackIgnore: true */ EVENTS_FILE, "utf8");
   for (const line of raw.split("\n")) {
     if (!line.trim()) continue;
     try {
-      apply(markets, JSON.parse(line) as RawEvent);
+      events.push(JSON.parse(line) as RawEvent);
     } catch {
       // A torn final line is normal while the indexer is mid-append. Skipping
       // it costs one event that the next read will pick up.
     }
   }
 
-  globalForProjection.__greekbetProjection = {
+  const markets = foldEvents(events);
+  globalForProjection.__greekbetProjectionFile = {
     markets,
     mtimeMs: stat.mtimeMs,
     size: stat.size,
@@ -260,8 +262,53 @@ export function projection(): Map<string, ChainMarket> {
   return markets;
 }
 
-export function getChainMarket(address: string): ChainMarket | undefined {
-  return projection().get(address);
+async function projectionFromMongo(): Promise<Map<string, ChainMarket>> {
+  const db = await getMongo();
+  const col = db.collection<RawEvent>("chain_events");
+  const count = await col.estimatedDocumentCount();
+  const cached = globalForProjection.__greekbetProjectionMongo;
+  if (
+    cached &&
+    cached.count === count &&
+    Date.now() - cached.at < MONGO_CACHE_MS
+  ) {
+    return cached.markets;
+  }
+
+  const events = await col
+    .find({})
+    .sort({ slot: 1, signature: 1, event_index: 1 })
+    .toArray();
+
+  const markets = foldEvents(events);
+  globalForProjection.__greekbetProjectionMongo = {
+    markets,
+    at: Date.now(),
+    count,
+  };
+  return markets;
+}
+
+/** Drop cached folds so the next read picks up newly indexed events. */
+export function invalidateProjection(): void {
+  globalForProjection.__greekbetProjectionFile = undefined;
+  globalForProjection.__greekbetProjectionMongo = undefined;
+}
+
+/**
+ * Read the stream and fold it.
+ *
+ * Mongo when `MONGODB_URI` is set; otherwise the local JSONL file.
+ */
+export async function projection(): Promise<Map<string, ChainMarket>> {
+  if (useMongo()) return projectionFromMongo();
+  return projectionFromFile();
+}
+
+export async function getChainMarket(
+  address: string,
+): Promise<ChainMarket | undefined> {
+  return (await projection()).get(address);
 }
 
 export function positionFor(
@@ -272,5 +319,5 @@ export function positionFor(
   return market.positions[wallet];
 }
 
-/** Where the stream is read from, for diagnostics. */
+/** Where the local stream is read from, for diagnostics. */
 export const eventsFilePath = EVENTS_FILE;

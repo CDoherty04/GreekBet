@@ -7,6 +7,7 @@
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useLoginWithSms, usePrivy } from "@privy-io/react-auth";
 import { useCreateWallet, useWallets } from "@privy-io/react-auth/solana";
@@ -209,6 +210,14 @@ export default function OnboardingPage() {
   return (
     <div className="flex flex-1 flex-col px-6 py-8">
       <div className="mb-8 text-center">
+        <Image
+          src="/logo.png"
+          alt="Groupbet"
+          width={96}
+          height={96}
+          className="mx-auto mb-5 h-24 w-24 rounded-2xl"
+          priority
+        />
         <h1 className="font-display text-4xl font-extrabold uppercase leading-none tracking-tight">
           Welcome to Groupbet
         </h1>

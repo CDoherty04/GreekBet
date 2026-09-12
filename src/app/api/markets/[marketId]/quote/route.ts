@@ -32,7 +32,7 @@ export async function POST(
   const meta = await db.getMarket(marketId);
   if (!meta) return fail("Market not found", 404);
 
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
   if (!chain) return fail("Market is not indexed yet", 409);
 
   const body = await readJson<QuoteBody>(req);

@@ -48,7 +48,7 @@ export async function GET(
   const loaded = await loadMarket(marketId, user.id);
   if ("error" in loaded) return loaded.error;
 
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
   // Settle a due resolution after responding; this view may lag by one load.
   scheduleDueSettlements([loaded.market], () => chain);
 
@@ -79,7 +79,7 @@ export async function PATCH(
   const body = await readJson<PatchBody>(req);
   if (!body) return fail("Invalid JSON");
 
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
 
   const patch: PatchBody = {};
   if (typeof body.pinned === "boolean") patch.pinned = body.pinned;
@@ -119,7 +119,7 @@ export async function DELETE(
   // the metadata while positions are open strands them with a market they can
   // no longer see. The old model could refund stakes from its own ledger; this
   // one cannot, because the money is not the app's to move.
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
   if (chain) {
     const openPositions = Object.values(chain.positions).filter(
       (p) => !p.redeemed && (p.yesShares !== "0" || p.noShares !== "0"),

@@ -30,7 +30,7 @@ export async function GET(
     return fail("Group not found", 404);
   }
 
-  const chain = projection();
+  const chain = await projection();
   const metas = await db.listMarketsForGroup(groupId);
   // Settle due resolutions after responding; this list may lag by one load.
   scheduleDueSettlements(metas, (address) => chain.get(address));

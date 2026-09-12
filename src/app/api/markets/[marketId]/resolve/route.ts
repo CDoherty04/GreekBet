@@ -111,7 +111,7 @@ export async function POST(
     return fail("Market not found", 404);
   }
 
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
   if (!chain) return fail("Market is not indexed yet", 409);
   if (chain.status === "resolved") {
     return fail("Market is already resolved", 409);
@@ -175,7 +175,7 @@ export async function POST(
     aiConfidence: confidence,
   }))!;
 
-  const settle = isSettleDue(updated, getChainMarket(marketId))
+  const settle = isSettleDue(updated, await getChainMarket(marketId))
     ? await settleMarket(marketId)
     : null;
 
@@ -183,7 +183,7 @@ export async function POST(
   return ok({
     market: await toMarketView(
       (await db.getMarket(marketId)) ?? updated,
-      getChainMarket(marketId),
+      await getChainMarket(marketId),
       user.walletAddress,
     ),
     settle,
@@ -210,7 +210,7 @@ export async function DELETE(
     return fail("Only the group owner can clear the resolution photo", 403);
   }
 
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
   if (chain?.status === "resolved") {
     return fail("Market is already resolved", 409);
   }

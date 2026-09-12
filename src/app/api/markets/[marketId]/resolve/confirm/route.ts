@@ -52,7 +52,7 @@ export async function POST(
     return fail("This event is already being settled", 409);
   }
 
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
   if (!chain) return fail("Market is not indexed yet", 409);
   if (chain.status === "resolved") {
     return fail("Market is already resolved", 409);
@@ -81,7 +81,7 @@ export async function POST(
   return ok({
     market: await toMarketView(
       (await db.getMarket(marketId)) ?? updated,
-      getChainMarket(marketId),
+      await getChainMarket(marketId),
       user.walletAddress,
     ),
     settle,

@@ -34,7 +34,7 @@ export async function POST(
   const group = await db.getGroup(meta.groupId);
   if (!group?.memberIds.includes(user.id)) return fail("Market not found", 404);
 
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
   if (!chain) {
     return fail("This market is not indexed yet — try again in a moment", 409);
   }

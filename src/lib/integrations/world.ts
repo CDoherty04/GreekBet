@@ -91,10 +91,18 @@ function worldKeysPresent(): boolean {
   );
 }
 
+function truthyEnv(name: string): boolean | undefined {
+  const v = env(name)?.toLowerCase().replace(/^["']|["']$/g, "");
+  if (v === undefined) return undefined;
+  if (["1", "true", "yes", "on"].includes(v)) return true;
+  if (["0", "false", "no", "off"].includes(v)) return false;
+  return undefined;
+}
+
 /** True when we mint local proofs instead of calling Developer Portal. */
 export function isWorldStubMode(): boolean {
-  if (env("WORLD_SELFIE_CHECK_STUB") === "true") return true;
-  if (env("WORLD_SELFIE_CHECK_STUB") === "false") return false;
+  const forced = truthyEnv("WORLD_SELFIE_CHECK_STUB");
+  if (forced !== undefined) return forced;
   return !worldKeysPresent();
 }
 

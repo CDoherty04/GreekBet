@@ -41,7 +41,7 @@ export async function POST(
     return ok({
       market: await toMarketView(
         existing,
-        getChainMarket(body.marketAddress),
+        await getChainMarket(body.marketAddress),
         user.walletAddress,
       ),
       signature: body.signature,
@@ -77,7 +77,7 @@ export async function POST(
     {
       market: await toMarketView(
         market,
-        getChainMarket(body.marketAddress),
+        await getChainMarket(body.marketAddress),
         user.walletAddress,
       ),
       signature: body.signature,

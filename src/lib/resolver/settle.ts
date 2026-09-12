@@ -30,6 +30,7 @@ import { db } from "@/lib/store";
 import { closeMarket, resolveMarket } from "@/lib/chain/actions";
 import {
   getChainMarket,
+  invalidateProjection,
   projection,
   type ChainMarket,
 } from "@/lib/chain/projection";
@@ -218,7 +219,7 @@ export interface SettlerDeps {
     address: string,
     patch: Partial<Market>,
   ): Promise<Market | undefined>;
-  getChainMarket(address: string): ChainMarket | undefined;
+  getChainMarket(address: string): Promise<ChainMarket | undefined>;
   closeMarket(input: { payer: Keypair; market: PublicKey }): Promise<string>;
   resolveMarket(input: {
     resolver: Keypair;
@@ -229,7 +230,7 @@ export interface SettlerDeps {
   resolverKeypair(): Keypair;
   feePayerKeypair(): Keypair;
   /** Re-read the indexer projection. */
-  refreshProjection(): void;
+  refreshProjection(): Promise<void>;
   now(): number;
   /** Defaults to `console`. */
   log?: Pick<Console, "error" | "warn">;
@@ -328,7 +329,7 @@ export function createSettler(deps: SettlerDeps): Settler {
       return { state: "skipped", reason: "Settlement is already in progress." };
     }
 
-    const chain = deps.getChainMarket(marketId);
+    const chain = await deps.getChainMarket(marketId);
     if (!chain) {
       return { state: "skipped", reason: "Market is not indexed yet." };
     }
@@ -389,8 +390,8 @@ export function createSettler(deps: SettlerDeps): Settler {
         });
       } catch (err) {
         if (programError(err)?.code !== ERR.MarketAlreadyResolved) throw err;
-        deps.refreshProjection();
-        const latest = deps.getChainMarket(marketId);
+        await deps.refreshProjection();
+        const latest = await deps.getChainMarket(marketId);
         return settledFromChain(
           marketId,
           record,
@@ -409,7 +410,7 @@ export function createSettler(deps: SettlerDeps): Settler {
         ...(closeSignature ? { closeSignature } : {}),
         error: undefined,
       });
-      deps.refreshProjection();
+      await deps.refreshProjection();
       return { state: "settled", outcome, signature: resolveSignature };
     } catch (err) {
       // Step 8, failure.
@@ -467,7 +468,10 @@ function settler(): Settler {
     resolveMarket,
     resolverKeypair,
     feePayerKeypair,
-    refreshProjection: () => void projection(),
+    refreshProjection: async () => {
+      invalidateProjection();
+      await projection();
+    },
     now: () => Date.now(),
     locks: (globalForSettle.__greekbetSettleLocks ??= new Map()),
   });

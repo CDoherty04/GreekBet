@@ -40,7 +40,7 @@ export async function POST(
     return fail("There is no confirmed outcome waiting to be settled", 409);
   }
 
-  const chain = getChainMarket(marketId);
+  const chain = await getChainMarket(marketId);
   if (!chain) return fail("Market is not indexed yet", 409);
   // Checked here, not via `isSettleDue`: that treats an already-resolved chain
   // market as due regardless of close time, so lazy loads can repair records.
@@ -56,7 +56,7 @@ export async function POST(
   return ok({
     market: await toMarketView(
       (await db.getMarket(marketId)) ?? meta,
-      getChainMarket(marketId),
+      await getChainMarket(marketId),
       user.walletAddress,
     ),
     settle,
