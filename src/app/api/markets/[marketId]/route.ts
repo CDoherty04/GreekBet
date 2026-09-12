@@ -18,7 +18,7 @@
 import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
-import { toMarketView } from "@/lib/markets";
+import { scheduleDueSettlements, toMarketView } from "@/lib/markets";
 import { getChainMarket } from "@/lib/chain/projection";
 import type { Group, Market } from "@/types";
 
@@ -48,12 +48,12 @@ export async function GET(
   const loaded = await loadMarket(marketId, user.id);
   if ("error" in loaded) return loaded.error;
 
+  const chain = getChainMarket(marketId);
+  // Settle a due resolution after responding; this view may lag by one load.
+  scheduleDueSettlements([loaded.market], () => chain);
+
   return ok({
-    market: toMarketView(
-      loaded.market,
-      getChainMarket(marketId),
-      user.walletAddress,
-    ),
+    market: toMarketView(loaded.market, chain, user.walletAddress),
   });
 }
 

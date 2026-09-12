@@ -1,13 +1,15 @@
 /**
- * Run resolver stage 1 (describe) against a local photo, without the camera UI.
+ * Run resolver stage 1 (describe), and optionally stage 2 (validate), against
+ * a local photo without the camera UI.
  *
- *   npm run describe -- <imagePath> "<question>" [--context "<text>"] [--json]
+ *   npm run describe -- <imagePath> "<question>" [--context "<text>"] [--validate] [--json]
  *
- * Loads `.env*` files the same way `next dev` does, so `OPENAI_API_KEY` and
- * `OPENAI_VISION_MODEL` from `.env.local` are picked up. Without a key the
- * describe module returns a flagged stub (`stub: true`) in development.
+ * Loads `.env*` files the same way `next dev` does, so `OPENAI_API_KEY`,
+ * `OPENAI_VISION_MODEL` and `OPENAI_VALIDATOR_MODEL` from `.env.local` are
+ * picked up. Without a key both stages return flagged stubs (`stub: true`) in
+ * development.
  *
- * Exit codes: 0 ok · 1 describe/file error · 2 bad arguments.
+ * Exit codes: 0 ok · 1 resolver/file error · 2 bad arguments.
  */
 
 import * as fs from "fs";
@@ -15,14 +17,12 @@ import * as path from "path";
 
 import { loadEnvConfig } from "@next/env";
 
-import {
-  DescribeError,
-  describeImage,
-  formatDescription,
-} from "../src/lib/resolver/describe";
+import { describeImage, formatDescription } from "../src/lib/resolver/describe";
+import { ResolverError } from "../src/lib/resolver/errors";
+import { validateDescription } from "../src/lib/resolver/validate";
 
 const USAGE =
-  'usage: npm run describe -- <imagePath> "<question>" [--context "<text>"] [--json]';
+  'usage: npm run describe -- <imagePath> "<question>" [--context "<text>"] [--validate] [--json]';
 
 const MIME_BY_EXT: Record<string, string> = {
   ".jpg": "image/jpeg",
@@ -37,6 +37,7 @@ interface Args {
   question: string;
   context?: string;
   json: boolean;
+  validate: boolean;
 }
 
 function usage(problem?: string): never {
@@ -49,11 +50,14 @@ function parseArgs(argv: string[]): Args {
   const positional: string[] = [];
   let context: string | undefined;
   let json = false;
+  let validate = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === "--json") {
       json = true;
+    } else if (arg === "--validate") {
+      validate = true;
     } else if (arg === "--context") {
       const value = argv[++i];
       if (value === undefined || value.startsWith("--")) {
@@ -80,7 +84,7 @@ function parseArgs(argv: string[]): Args {
   const [imagePath, question] = positional;
   if (!question.trim()) usage("<question> is empty");
 
-  return { imagePath, question, context, json };
+  return { imagePath, question, context, json, validate };
 }
 
 function fail(message: string): never {
@@ -114,6 +118,11 @@ function readAsDataUrl(imagePath: string): string {
   return `data:${mimeType};base64,${bytes.toString("base64")}`;
 }
 
+function printList(title: string, items: string[]) {
+  console.log(`${title}:${items.length === 0 ? " (none)" : ""}`);
+  for (const item of items) console.log(`- ${item}`);
+}
+
 async function main() {
   const args = parseArgs(process.argv.slice(2));
 
@@ -128,23 +137,46 @@ async function main() {
     question: args.question,
     context: args.context,
   });
-  const elapsedMs = Date.now() - started;
+  const describeMs = Date.now() - started;
+
+  const validation = args.validate
+    ? await validateDescription({
+        question: args.question,
+        context: args.context,
+        description: result.description,
+        describeStub: result.stub,
+      })
+    : null;
+  const validateMs = Date.now() - started - describeMs;
 
   if (args.json) {
-    console.log(JSON.stringify(result, null, 2));
+    console.log(JSON.stringify(validation ? { ...result, validation } : result, null, 2));
     return;
   }
 
   console.log(formatDescription(result.description));
   console.log(
     `\nmodel=${result.model} responseId=${result.responseId ?? "null"} ` +
-      `stub=${result.stub} elapsed=${elapsedMs}ms`,
+      `stub=${result.stub} elapsed=${describeMs}ms`,
   );
+
+  if (validation) {
+    console.log("\n=== Validation ===");
+    console.log(`Verdict: ${validation.verdict}`);
+    console.log(`Confidence: ${validation.confidence}`);
+    console.log(`Reasoning: ${validation.reasoning}`);
+    printList("Evidence", validation.evidence);
+    printList("Red flags", validation.redFlags);
+    console.log(
+      `\nmodel=${validation.model} responseId=${validation.responseId ?? "null"} ` +
+        `stub=${validation.stub} elapsed=${validateMs}ms`,
+    );
+  }
 }
 
 main().catch((err) => {
-  if (err instanceof DescribeError) {
-    console.error(`${err.code}: ${err.message}`);
+  if (err instanceof ResolverError) {
+    console.error(`${err.stage} ${err.code}: ${err.message}`);
   } else {
     console.error("failed:", err instanceof Error ? err.message : err);
   }

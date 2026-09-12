@@ -24,10 +24,10 @@ import { OddsBar } from "@/components/OddsBar";
 import { Countdown, useNow } from "@/components/Countdown";
 import { useRequireUser } from "@/components/SessionProvider";
 import { usePrivySend } from "@/hooks/usePrivySend";
-import { api } from "@/lib/api";
+import { api, ApiError } from "@/lib/api";
 import { formatProb, winningShares } from "@/lib/market-display";
 import { formatUnits, parseUnits, UNIT } from "@/lib/chain/config";
-import type { MarketView, Side } from "@/types";
+import type { MarketView, ResolutionStatus, Side } from "@/types";
 
 type Action = "buy" | "sell";
 
@@ -66,11 +66,16 @@ export default function MarketDetailPage() {
     return () => clearInterval(t);
   }, [market, load]);
 
+  // A submitted resolution photo pauses app trading until the market resolves
+  // (the trade route refuses with 409), so don't quote either.
+  const tradingPaused =
+    market?.resolution !== undefined && market.status !== "resolved";
+
   // Quote whenever the trade changes. Debounced: each quote is a simulated
   // transaction against devnet, so firing one per keystroke would be slow and
   // would draw rate limiting.
   useEffect(() => {
-    if (!market?.indexed || market.status !== "open") return;
+    if (!market?.indexed || market.status !== "open" || tradingPaused) return;
     let cancelled = false;
     const handle = setTimeout(async () => {
       let base: bigint;
@@ -104,7 +109,7 @@ export default function MarketDetailPage() {
       cancelled = true;
       clearTimeout(handle);
     };
-  }, [amount, side, action, marketId, market?.indexed, market?.status]);
+  }, [amount, side, action, marketId, market?.indexed, market?.status, tradingPaused]);
 
   async function submitTrade() {
     setBusy(true);
@@ -127,6 +132,11 @@ export default function MarketDetailPage() {
       setTimeout(() => void load().catch(() => {}), 2500);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Trade failed");
+      // 409 = a resolution photo landed since this page loaded and trading is
+      // paused. Reload so the notice replaces the live trade panel.
+      if (e instanceof ApiError && e.status === 409) {
+        void load().catch(() => {});
+      }
     } finally {
       setBusy(false);
     }
@@ -228,9 +238,7 @@ export default function MarketDetailPage() {
           </Card>
         )}
 
-        {market.resolutionImageUrl && market.status !== "resolved" && (
-          <PendingResolution market={market} />
-        )}
+        {tradingPaused && <ResolutionNotice market={market} isOwner={isOwner} />}
 
         {market.status === "resolved" ? (
           <ResolvedPanel
@@ -257,9 +265,10 @@ export default function MarketDetailPage() {
             busy={busy}
             held={held}
             yesProb={market.pricing.yesProb}
+            paused={tradingPaused}
             onSubmit={submitTrade}
           />
-        ) : (
+        ) : tradingPaused ? null : (
           <Card>
             <p className="text-sm text-muted">
               Trading is closed. Waiting on resolution.
@@ -313,14 +322,23 @@ export default function MarketDetailPage() {
       {market.status !== "resolved" && (
         <div className="border-t border-border p-4">
           <Link href={`/markets/${market.address}/resolve`}>
-            <Button variant={live ? "secondary" : "primary"}>
-              Resolve with photo
+            <Button variant={live && !tradingPaused ? "secondary" : "primary"}>
+              {resolveLinkLabel(market, isOwner)}
             </Button>
           </Link>
         </div>
       )}
     </div>
   );
+}
+
+function resolveLinkLabel(market: MarketView, isOwner: boolean): string {
+  const status = market.resolution?.status;
+  if (!status) return "Resolve with photo";
+  if (!isOwner) return "View resolution status";
+  if (status === "needs_owner") return "Decide the result";
+  if (status === "failed") return "Retry settlement";
+  return "Review resolution";
 }
 
 function shorten(addr: string): string {
@@ -339,6 +357,7 @@ function TradePanel({
   busy,
   held,
   yesProb,
+  paused,
   onSubmit,
 }: {
   side: Side;
@@ -352,6 +371,8 @@ function TradePanel({
   busy: boolean;
   held: string;
   yesProb: number;
+  /** A resolution photo is in: everything renders but nothing is usable. */
+  paused: boolean;
   onSubmit: () => void;
 }) {
   let parsed: bigint | null = null;
@@ -369,7 +390,8 @@ function TradePanel({
     action === "sell" && parsed !== null && parsed > BigInt(held || "0");
 
   return (
-    <Card className="space-y-4">
+    <Card className={`space-y-4 ${paused ? "opacity-60" : ""}`}>
+      <fieldset disabled={paused} className="min-w-0 space-y-4">
       <div className="grid grid-cols-2 gap-3">
         <button
           onClick={() => setSide("yes")}
@@ -445,7 +467,9 @@ function TradePanel({
       </label>
 
       <div className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm">
-        {quoting ? (
+        {paused ? (
+          <span className="text-muted">Trading paused</span>
+        ) : quoting ? (
           <span className="text-muted">Quoting…</span>
         ) : quote ? (
           <div className="flex items-center justify-between">
@@ -469,11 +493,14 @@ function TradePanel({
       <Button
         variant={side === "yes" ? "yes" : "no"}
         loading={busy}
-        disabled={parsed === null || parseError !== null || overSell}
+        disabled={paused || parsed === null || parseError !== null || overSell}
         onClick={onSubmit}
       >
-        {action === "buy" ? "Buy" : "Sell"} {side.toUpperCase()}
+        {paused
+          ? "Trading paused"
+          : `${action === "buy" ? "Buy" : "Sell"} ${side.toUpperCase()}`}
       </Button>
+      </fieldset>
     </Card>
   );
 }
@@ -523,11 +550,22 @@ function ResolvedPanel({
         )}
       </div>
 
-      {market.resolutionNote && (
+      {market.resolution && !market.resolution.redacted ? (
         <p className="text-sm text-muted">
-          <span className="font-medium text-foreground">AI resolver:</span>{" "}
-          {market.resolutionNote}
+          <span className="font-medium text-foreground">
+            {market.resolution.source === "owner"
+              ? "Decided by the owner."
+              : "Decided by AI."}
+          </span>{" "}
+          {market.resolution.reasoning}
         </p>
+      ) : (
+        market.resolutionNote && (
+          <p className="text-sm text-muted">
+            <span className="font-medium text-foreground">AI resolver:</span>{" "}
+            {market.resolutionNote}
+          </p>
+        )
       )}
 
       {redeemed && market.myPosition?.payout !== undefined && (
@@ -547,49 +585,42 @@ function ResolvedPanel({
   );
 }
 
+const RESOLUTION_STATUS_COPY: Record<ResolutionStatus, string> = {
+  pending: "Settles automatically when the event closes",
+  needs_owner: "Waiting for the owner to decide",
+  settling: "Settling on chain…",
+  failed: "Settlement is retrying",
+  settled: "Settled on chain",
+};
+
 /**
- * The AI has read the photo but nobody has settled anything yet.
+ * A resolution photo is in but the market hasn't resolved on chain.
  *
- * Shown to everyone, deliberately: the reading is public before it becomes
- * binding, so members can object to the owner before an irreversible on-chain
- * write. The confidence figure is included for the same reason — a low number
- * is exactly when a human should look harder.
+ * Members see only that and the status: the photo and verdict reveal the
+ * answer, so they stay hidden until resolution (the server redacts them). The
+ * owner gets a pointer to the resolve screen, where the details live.
  */
-function PendingResolution({ market }: { market: MarketView }) {
+function ResolutionNotice({
+  market,
+  isOwner,
+}: {
+  market: MarketView;
+  isOwner: boolean;
+}) {
+  const res = market.resolution;
+  if (!res) return null;
+  const ownerView = isOwner && !res.redacted;
   return (
-    <Card className="space-y-2">
-      <p className="label-hud">Awaiting the owner&apos;s confirmation</p>
-      {market.resolutionImageUrl && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={market.resolutionImageUrl}
-          alt="Resolution photo"
-          className="w-full rounded-xl object-cover"
-        />
-      )}
-      {market.aiPrediction && (
-        <p className="text-sm">
-          <span className="text-muted">AI reads this as</span>{" "}
-          <span
-            className={
-              market.aiPrediction === "yes" ? "text-yes" : "text-no"
-            }
-          >
-            {market.aiPrediction.toUpperCase()}
-          </span>
-          {market.aiConfidence !== undefined && (
-            <span className="ml-2 text-xs text-muted">
-              {Math.round(market.aiConfidence * 100)}% confident
-            </span>
-          )}
-        </p>
-      )}
-      {market.resolutionNote && (
-        <p className="text-sm text-muted">{market.resolutionNote}</p>
-      )}
-      <p className="text-xs text-muted">
-        Nothing is settled until the group owner confirms. That write goes on
-        chain and cannot be undone.
+    <Card className="space-y-1 border-brand/40">
+      <p className="label-hud text-brand">Resolution submitted — trading paused</p>
+      <p className="text-sm">
+        {ownerView && res.status === "needs_owner"
+          ? "The AI couldn't settle this on its own. Your call."
+          : ownerView && res.status === "pending" && res.outcome
+            ? `Locked in ${res.outcome.toUpperCase()} (${
+                res.source === "owner" ? "your call" : "AI"
+              }) — settles when the event closes.`
+            : RESOLUTION_STATUS_COPY[res.status]}
       </p>
     </Card>
   );

@@ -1,24 +1,29 @@
 /**
- * /api/markets/[marketId]/resolve — read a resolution photo with the AI.
+ * /api/markets/[marketId]/resolve — submit (POST) or clear (DELETE) a
+ * resolution photo.
  *
- * The headline recipe, chaining sponsors:
+ * POST runs the headline recipe, chaining sponsors:
  *   1. World  → face-match the uploader against their signup selfie, so a real,
  *      verified human vouched for the photo.
- *   2. Resolver (Bazantic) → describe (OpenAI vision) → sanitize → decide
- *      yes/no (decide is still a stub).
+ *   2. Resolver (Bazantic) → describe (OpenAI vision) → sanitize → validate
+ *      (text-only) → policy.
  *
- * Resolver failures (`DescribeError`) map to their own status — e.g. a bad
+ * The result is stored as a `ResolutionRecord`:
+ *   - policy `auto`        → `pending`, `source: "ai"`, outcome = verdict;
+ *   - policy `needs_owner` → `needs_owner`; the owner picks at `/resolve/confirm`.
+ *
+ * A `pending` record settles on chain once close time has passed — right here
+ * if it already has, otherwise via a later trigger (market/group load, confirm,
+ * or the owner's "Settle now"). Settlement is irreversible on chain.
+ *
+ * Replacement rule: once a record exists only the group owner may submit a new
+ * photo (so a member can't re-roll an unfavourable verdict), and a record that
+ * is `settling`/`settled` can't be replaced at all.
+ *
+ * Resolver failures (`ResolverError`) map to their own status — e.g. a bad
  * `imageDataUrl` is a 400 — and nothing is written to the market.
  *
- * **This step decides nothing.** It records the AI's reading and returns it for
- * a human to confirm at `/resolve/confirm`, which is what actually settles the
- * market on chain.
- *
- * That separation matters more now than it did off chain. Confirming writes the
- * outcome with the resolver authority, and the program makes that write one-way
- * — there is no correction, and winners redeem real collateral against it. An
- * AI reading a photo is not grounds to do that unilaterally, however confident
- * it sounds.
+ * See `docs/resolver/PLAN-2-validate-settle.md`.
  */
 
 import { db } from "@/lib/store";
@@ -30,11 +35,57 @@ import {
   resolveFromImage,
   type Resolution,
 } from "@/lib/integrations/resolver";
-import { DescribeError } from "@/lib/resolver/describe";
+import { ResolverError } from "@/lib/resolver/errors";
+import { isSettleDue, settleMarket } from "@/lib/resolver/settle";
+import type { ResolutionRecord } from "@/lib/resolver/types";
 import { getChainMarket } from "@/lib/chain/projection";
+import type { Group, Market, User } from "@/types";
 
 interface ResolveBody {
   imageDataUrl: string;
+}
+
+/** Why `user` may not submit a photo over the market's current record, if so. */
+function replacementBlocked(
+  meta: Market,
+  group: Group,
+  user: User,
+): string | null {
+  const record = meta.resolution;
+  if (!record) return null;
+  if (record.status === "settling" || record.status === "settled") {
+    return "This event is already being settled — the photo can't be replaced";
+  }
+  if (group.ownerId !== user.id) {
+    return "A resolution photo was already submitted — only the group owner can replace it";
+  }
+  return null;
+}
+
+function buildRecord(
+  prediction: Resolution,
+  submittedBy: string,
+  now: number,
+): ResolutionRecord {
+  const { validation, decision } = prediction;
+  const auto = decision.action === "auto" && decision.outcome !== undefined;
+  return {
+    status: auto ? "pending" : "needs_owner",
+    ...(auto ? { outcome: decision.outcome, source: "ai" as const } : {}),
+    verdict: validation.verdict,
+    confidence: validation.confidence,
+    reasoning: validation.reasoning,
+    evidence: validation.evidence,
+    redFlags: validation.redFlags,
+    policyReason: decision.reason,
+    describeModel: prediction.describeModel,
+    validateModel: validation.model,
+    stub: prediction.describeStub || validation.stub,
+    submittedBy,
+    submittedAt: now,
+    updatedAt: now,
+    attempts: 0,
+  };
 }
 
 export async function POST(
@@ -59,16 +110,19 @@ export async function POST(
     return fail("Market is already resolved", 409);
   }
 
+  const blocked = replacementBlocked(meta, group, user);
+  if (blocked) return fail(blocked, 409);
+
   const body = await readJson<ResolveBody>(req);
   if (!body?.imageDataUrl) return fail("imageDataUrl is required");
 
   // Run concurrently:
   //   1) World Selfie Check — confirm the uploader is really in the photo.
-  //   2) Resolver recipe — describe → sanitize → decide.
-  let faceMatch: Awaited<ReturnType<typeof matchFace>>;
+  //   2) Resolver recipe — describe → sanitize → validate → policy.
+  // The face-match result isn't part of the response (PLAN-2 API table).
   let prediction: Resolution;
   try {
-    [faceMatch, prediction] = await Promise.all([
+    [, prediction] = await Promise.all([
       matchFace(user.avatarUrl, body.imageDataUrl),
       resolveFromImage({
         question: meta.title,
@@ -78,31 +132,85 @@ export async function POST(
     ]);
   } catch (err) {
     // Nothing is persisted on failure.
-    if (err instanceof DescribeError) return fail(err.message, err.status);
+    if (err instanceof ResolverError) return fail(err.message, err.status);
     console.error("[resolve] resolver failed", err);
     return fail("Could not analyze the photo", 502);
   }
 
-  // Recorded as a suggestion. Nothing on chain has changed.
+  // The AI calls take seconds: re-check against the current state so a
+  // concurrent submission, clear, or settle isn't overwritten.
+  const current = db.getMarket(marketId);
+  if (!current) return fail("Market not found", 404);
+  const blockedNow = replacementBlocked(current, group, user);
+  if (blockedNow) return fail(blockedNow, 409);
+
+  const record = buildRecord(prediction, user.id, Date.now());
+  const { verdict, confidence } = prediction.validation;
   const updated = db.updateMarket(marketId, {
+    resolution: record,
     resolutionImageUrl: body.imageDataUrl,
     resolutionNote: prediction.description,
-    aiPrediction: prediction.outcome,
-    aiConfidence: prediction.confidence,
     aiDescription: prediction.details,
-    aiModel: prediction.model,
+    aiModel: prediction.describeModel,
+    // Backwards-compatible mirrors of the verdict; `resolution` is the truth.
+    aiPrediction: verdict === "yes" || verdict === "no" ? verdict : undefined,
+    aiConfidence: confidence,
+  })!;
+
+  const settle = isSettleDue(updated, getChainMarket(marketId))
+    ? await settleMarket(marketId)
+    : null;
+
+  // `toMarketView` redacts for a non-owner submitter.
+  return ok({
+    market: toMarketView(
+      db.getMarket(marketId) ?? updated,
+      getChainMarket(marketId),
+      user.walletAddress,
+    ),
+    settle,
+  });
+}
+
+export async function DELETE(
+  _req: Request,
+  ctx: RouteContext<"/api/markets/[marketId]/resolve">,
+) {
+  const user = await getCurrentUser();
+  if (!user) return fail("Not signed in", 401);
+
+  const { marketId } = await ctx.params;
+  const meta = db.getMarket(marketId);
+  if (!meta) return fail("Market not found", 404);
+
+  const group = db.getGroup(meta.groupId);
+  if (!group?.memberIds.includes(user.id)) {
+    return fail("Market not found", 404);
+  }
+  if (group.ownerId !== user.id) {
+    return fail("Only the group owner can clear the resolution photo", 403);
+  }
+
+  const chain = getChainMarket(marketId);
+  if (chain?.status === "resolved") {
+    return fail("Market is already resolved", 409);
+  }
+  const status = meta.resolution?.status;
+  if (status === "settling" || status === "settled") {
+    return fail("This event is already being settled — the photo can't be cleared", 409);
+  }
+
+  const updated = db.updateMarket(marketId, {
+    resolution: undefined,
+    resolutionImageUrl: undefined,
+    resolutionNote: undefined,
+    aiDescription: undefined,
+    aiModel: undefined,
+    aiPrediction: undefined,
+    aiConfidence: undefined,
   })!;
 
   return ok({
     market: toMarketView(updated, chain, user.walletAddress),
-    prediction: {
-      outcome: prediction.outcome,
-      confidence: prediction.confidence,
-      description: prediction.description,
-      details: prediction.details,
-      model: prediction.model,
-      stub: prediction.stub,
-    },
-    faceMatch,
   });
 }

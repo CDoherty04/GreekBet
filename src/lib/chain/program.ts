@@ -162,17 +162,31 @@ export async function sendAndConfirm(
         skipPreflight: attempt > 0, // preflight once; it re-fails on a resend
         preflightCommitment: COMMITMENT,
       });
-      await conn.confirmTransaction(
+      const confirmed = await conn.confirmTransaction(
         { signature: sig, blockhash, lastValidBlockHeight },
         COMMITMENT,
       );
+      // `confirmTransaction` resolves, not rejects, when a transaction lands
+      // but fails on chain. Skipped preflight, or state changing between
+      // simulation and execution, can both get us here. Returning `sig` would
+      // report a failed resolve as success.
+      if (confirmed.value.err) {
+        throw new Error(
+          `Transaction ${sig} failed on chain: ${JSON.stringify(confirmed.value.err)}`,
+        );
+      }
       return sig;
     } catch (err) {
       lastErr = err as Error;
       const msg = lastErr.message ?? "";
       // A revert is deterministic — resending cannot help, and the program's
-      // error is what the user needs to see.
-      if (msg.includes("custom program error") || msg.includes("Error Code:")) {
+      // error is what the user needs to see. Includes a landed-but-failed
+      // transaction: its signature is already spent.
+      if (
+        msg.includes("custom program error") ||
+        msg.includes("Error Code:") ||
+        msg.includes("failed on chain")
+      ) {
         throw lastErr;
       }
       if (msg.includes("block height exceeded") || attempt === attempts - 1) {

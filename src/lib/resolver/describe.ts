@@ -12,16 +12,17 @@
 
 import "server-only";
 
-import OpenAI from "openai";
-import type { Response as OpenAIResponse } from "openai/resources/responses/responses";
-
+import { DescribeError } from "./errors";
 import { parseImageDataUrl } from "./image-input";
+import { apiKey, DEFAULT_OPENAI_MODEL, runStructuredResponse } from "./openai";
 import {
   buildDescribeUserText,
   DESCRIBE_INSTRUCTIONS,
   DESCRIPTION_JSON_SCHEMA,
   DESCRIPTION_SCHEMA_NAME,
 } from "./prompt";
+
+export { DescribeError, type DescribeErrorCode } from "./errors";
 
 export interface ImageDescription {
   /** 1–3 sentence neutral summary of the scene. */
@@ -59,65 +60,14 @@ export interface DescribeResult {
   stub: boolean;
 }
 
-export type DescribeErrorCode =
-  | "invalid_image" // 400 — bad data URL / type / size
-  | "not_configured" // 503 — no OPENAI_API_KEY in production
-  | "refused" // 422 — model refused (safety)
-  | "bad_output" // 502 — response didn't match schema
-  | "upstream"; // 502 — API/network/timeout error
-
-const STATUS_BY_CODE: Record<DescribeErrorCode, number> = {
-  invalid_image: 400,
-  not_configured: 503,
-  refused: 422,
-  bad_output: 502,
-  upstream: 502,
-};
-
-export class DescribeError extends Error {
-  readonly code: DescribeErrorCode;
-  readonly status: number;
-
-  constructor(code: DescribeErrorCode, message: string, options?: { cause?: unknown }) {
-    super(message, options);
-    this.name = "DescribeError";
-    this.code = code;
-    this.status = STATUS_BY_CODE[code];
-  }
-}
-
-const DEFAULT_MODEL = "gpt-5.6-terra";
 const QUALITIES: readonly ImageDescription["imageQuality"][] = [
   "clear",
   "partial",
   "unusable",
 ];
 
-function apiKey(): string | undefined {
-  return process.env.OPENAI_API_KEY?.trim() || undefined;
-}
-
 function visionModel(): string {
-  return process.env.OPENAI_VISION_MODEL?.trim() || DEFAULT_MODEL;
-}
-
-let client: OpenAI | null = null;
-let clientKey: string | null = null;
-
-function getClient(key: string): OpenAI {
-  if (!client || clientKey !== key) {
-    client = new OpenAI({ apiKey: key, timeout: 60_000 });
-    clientKey = key;
-  }
-  return client;
-}
-
-/** Strip anything key-shaped (and the configured key itself) from a message. */
-function scrub(message: string): string {
-  let out = message.replace(/\bsk-[A-Za-z0-9_*-]{4,}/g, "[redacted-key]");
-  const key = apiKey();
-  if (key) out = out.split(key).join("[redacted-key]");
-  return out;
+  return process.env.OPENAI_VISION_MODEL?.trim() || DEFAULT_OPENAI_MODEL;
 }
 
 let warnedStub = false;
@@ -208,16 +158,6 @@ function toDescription(raw: unknown): ImageDescription {
   };
 }
 
-function findRefusal(response: OpenAIResponse): string | null {
-  for (const item of response.output ?? []) {
-    if (item.type !== "message") continue;
-    for (const part of item.content) {
-      if (part.type === "refusal") return part.refusal.trim() || "Model refused";
-    }
-  }
-  return null;
-}
-
 /**
  * Describe a resolution photo. Validates the image before any network call.
  * Throws `DescribeError` on every failure path.
@@ -242,80 +182,37 @@ export async function describeImage(input: {
     return stubResult();
   }
 
-  const model = visionModel();
-  let response: OpenAIResponse;
-  try {
-    response = await getClient(key).responses.create({
-      model,
-      // Photos of group members: don't have OpenAI retain them for retrieval.
-      store: false,
-      instructions: DESCRIBE_INSTRUCTIONS,
-      input: [
-        {
-          role: "user",
-          content: [
-            {
-              type: "input_text",
-              text: buildDescribeUserText(input.question, input.context),
-            },
-            {
-              type: "input_image",
-              image_url: input.imageDataUrl,
-              detail: "high",
-            },
-          ],
-        },
-      ],
-      text: {
-        format: {
-          type: "json_schema",
-          name: DESCRIPTION_SCHEMA_NAME,
-          schema: DESCRIPTION_JSON_SCHEMA,
-          strict: true,
-        },
+  const result = await runStructuredResponse({
+    stage: "describe",
+    key,
+    model: visionModel(),
+    instructions: DESCRIBE_INSTRUCTIONS,
+    input: [
+      {
+        role: "user",
+        content: [
+          {
+            type: "input_text",
+            text: buildDescribeUserText(input.question, input.context),
+          },
+          {
+            type: "input_image",
+            image_url: input.imageDataUrl,
+            detail: "high",
+          },
+        ],
       },
-    });
-  } catch (e) {
-    const message = e instanceof Error ? e.message : String(e);
-    throw new DescribeError(
-      "upstream",
-      scrub(`Vision request failed: ${message}`),
-    );
-  }
-
-  const refusal = findRefusal(response);
-  if (refusal) {
-    throw new DescribeError("refused", scrub(`Model refused to describe the image: ${refusal}`));
-  }
-
-  if (response.status === "failed") {
-    throw new DescribeError(
-      "upstream",
-      scrub(`Vision request failed: ${response.error?.message ?? "unknown error"}`),
-    );
-  }
-  if (response.status === "incomplete") {
-    const reason = response.incomplete_details?.reason ?? "unknown";
-    if (reason === "content_filter") {
-      throw new DescribeError("refused", "Model output was blocked by the content filter");
-    }
-    throw badOutput(`Model output was incomplete (${reason})`);
-  }
-
-  const text = response.output_text?.trim();
-  if (!text) throw badOutput("Model returned no output");
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(text);
-  } catch {
-    throw badOutput("Model output is not valid JSON");
-  }
+    ],
+    schemaName: DESCRIPTION_SCHEMA_NAME,
+    schema: DESCRIPTION_JSON_SCHEMA,
+    requestLabel: "Vision request",
+    refusalAction: "describe the image",
+  });
 
   return {
-    description: toDescription(parsed),
-    model: response.model || model,
-    responseId: response.id ?? null,
+    description: toDescription(result.parsed),
+    model: result.model,
+    responseId: result.responseId,
     stub: false,
   };
 }

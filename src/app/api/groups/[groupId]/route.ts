@@ -8,7 +8,7 @@
 import { db } from "@/lib/store";
 import { fail, ok } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
-import { toMarketView } from "@/lib/markets";
+import { scheduleDueSettlements, toMarketView } from "@/lib/markets";
 import { projection } from "@/lib/chain/projection";
 import type { User } from "@/types";
 
@@ -31,8 +31,10 @@ export async function GET(
 
   // One projection read for the whole list rather than per market.
   const chain = projection();
-  const markets = db
-    .listMarketsForGroup(groupId)
+  const allMarkets = db.listMarketsForGroup(groupId);
+  // Settle due resolutions after responding; this list may lag by one load.
+  scheduleDueSettlements(allMarkets, (address) => chain.get(address));
+  const markets = allMarkets
     .filter((m) => !m.archived)
     .map((m) => toMarketView(m, chain.get(m.address), user.walletAddress));
 
