@@ -23,6 +23,7 @@ import {
   VersionedTransaction,
   type TransactionInstruction,
 } from "@solana/web3.js";
+import bs58 from "bs58";
 
 import idlJson from "./greekbet.json";
 import { PROGRAM_ID, RPC_URL } from "./config";
@@ -122,77 +123,110 @@ export async function buildUnsignedTransaction(
 }
 
 /**
- * Sign and send, retrying in a way that cannot double-apply.
+ * Sign and send for server-held keys (resolver / fee payer), not user wallets.
  *
- * Used for server-held keys (resolver / fee payer), not user wallets.
+ * Devnet drops transactions and expires blockhashes routinely. Strategy:
  *
- * Devnet drops transactions and expires blockhashes routinely, and the naive
- * fix — rebuild and resend on timeout — can apply a trade twice. The contracts'
- * own devnet suite hit exactly that.
- *
- * The safe shape is to sign **once** and resend the *same bytes*. A Solana
- * transaction is uniquely identified by its signature, which covers its
- * blockhash, so resending an identical signed transaction is idempotent: the
- * cluster either has it or does not, and a duplicate is discarded rather than
- * executed again. Only a genuinely expired blockhash forces a rebuild, and by
- * then the original provably cannot land.
+ * 1. **Resend identical bytes** while the blockhash is still valid.
+ * 2. On expiry, **ask the cluster if the signature landed** before rebuilding
+ *    (`confirmTransaction` expiry does not mean the tx failed — see
+ *    `contracts/docs/DEVNET.md` §5.4).
+ * 3. **Rebuild with a fresh blockhash** only when the cluster has never seen
+ *    the signature. Callers are close/resolve (idempotent on chain).
  */
 export async function sendAndConfirm(
   instructions: TransactionInstruction[],
   signers: Keypair[],
   feePayer: PublicKey,
-  attempts = 3,
+  rebuilds = 4,
 ): Promise<string> {
   const conn = connection();
-  const { blockhash, lastValidBlockHeight } =
-    await conn.getLatestBlockhash(COMMITMENT);
-
-  const tx = new Transaction({ blockhash, lastValidBlockHeight, feePayer }).add(
-    ...instructions,
-  );
-  tx.sign(...signers);
-
-  const raw = tx.serialize();
   let lastErr: Error | undefined;
 
-  for (let attempt = 0; attempt < attempts; attempt++) {
-    try {
-      // Identical bytes every time, so this is a resend, not a new transaction.
-      const sig = await conn.sendRawTransaction(raw, {
-        skipPreflight: attempt > 0, // preflight once; it re-fails on a resend
-        preflightCommitment: COMMITMENT,
-      });
-      const confirmed = await conn.confirmTransaction(
-        { signature: sig, blockhash, lastValidBlockHeight },
-        COMMITMENT,
-      );
-      // `confirmTransaction` resolves, not rejects, when a transaction lands
-      // but fails on chain. Skipped preflight, or state changing between
-      // simulation and execution, can both get us here. Returning `sig` would
-      // report a failed resolve as success.
-      if (confirmed.value.err) {
-        throw new Error(
-          `Transaction ${sig} failed on chain: ${JSON.stringify(confirmed.value.err)}`,
+  // Fail fast — a zero-SOL fee payer otherwise burns rebuilds waiting for
+  // blockhash expiry after we skip preflight on a retry.
+  const balance = await conn.getBalance(feePayer, COMMITMENT);
+  if (balance < 5_000) {
+    throw new Error(
+      `Attempt to debit an account but found no record of a prior credit (fee payer ${feePayer.toBase58()} has ${balance} lamports)`,
+    );
+  }
+
+  for (let rebuild = 0; rebuild < rebuilds; rebuild++) {
+    const { blockhash, lastValidBlockHeight } =
+      await conn.getLatestBlockhash(COMMITMENT);
+
+    const tx = new Transaction({ blockhash, lastValidBlockHeight, feePayer }).add(
+      ...instructions,
+    );
+    tx.sign(...signers);
+    const raw = tx.serialize();
+    // Signature is determined at sign time — reuse for status checks.
+    const signature = bs58.encode(tx.signature!);
+
+    // A few identical-byte resends before giving up on this blockhash.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await conn.sendRawTransaction(raw, {
+          // Always preflight the first send of a rebuild so empty fee-payer /
+          // program errors surface immediately instead of timing out.
+          skipPreflight: attempt > 0,
+          preflightCommitment: COMMITMENT,
+          maxRetries: 5,
+        });
+        const confirmed = await conn.confirmTransaction(
+          { signature, blockhash, lastValidBlockHeight },
+          COMMITMENT,
         );
+        if (confirmed.value.err) {
+          throw new Error(
+            `Transaction ${signature} failed on chain: ${JSON.stringify(confirmed.value.err)}`,
+          );
+        }
+        return signature;
+      } catch (err) {
+        lastErr = err as Error;
+        const msg = lastErr.message ?? "";
+
+        // Did it land anyway? Expiry often lies on public RPC.
+        try {
+          const st = await conn.getSignatureStatus(signature, {
+            searchTransactionHistory: true,
+          });
+          if (st?.value) {
+            if (st.value.err) {
+              throw new Error(
+                `Transaction ${signature} failed on chain: ${JSON.stringify(st.value.err)}`,
+              );
+            }
+            return signature;
+          }
+        } catch (statusErr) {
+          const statusMsg =
+            statusErr instanceof Error ? statusErr.message : String(statusErr);
+          if (statusMsg.includes("failed on chain")) throw statusErr;
+        }
+
+        if (
+          msg.includes("custom program error") ||
+          msg.includes("Error Code:") ||
+          msg.includes("failed on chain") ||
+          msg.includes("Attempt to debit an account") ||
+          msg.includes("insufficient funds") ||
+          msg.includes("insufficient lamports")
+        ) {
+          throw lastErr;
+        }
+        // Blockhash dead and signature unseen — outer loop rebuilds.
+        if (
+          msg.includes("block height exceeded") ||
+          lastErr.name === "TransactionExpiredBlockheightExceededError"
+        ) {
+          break;
+        }
+        if (attempt === 2) break;
+        await new Promise((r) => setTimeout(r, 400 * 2 ** attempt));
       }
-      return sig;
-    } catch (err) {
-      lastErr = err as Error;
-      const msg = lastErr.message ?? "";
-      // A revert is deterministic — resending cannot help, and the program's
-      // error is what the user needs to see. Includes a landed-but-failed
-      // transaction: its signature is already spent.
-      if (
-        msg.includes("custom program error") ||
-        msg.includes("Error Code:") ||
-        msg.includes("failed on chain")
-      ) {
-        throw lastErr;
-      }
-      if (msg.includes("block height exceeded") || attempt === attempts - 1) {
-        break;
-      }
-      await new Promise((r) => setTimeout(r, 600 * 2 ** attempt));
     }
   }
 

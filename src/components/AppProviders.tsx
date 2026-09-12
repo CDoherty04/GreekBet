@@ -47,9 +47,8 @@ export function AppProviders({ children }: { children: React.ReactNode }) {
           solana: {
             createOnLogin: "all-users",
           },
-          // Headless signing — the connect/confirm modals often surface
-          // "Failed to connect to wallet" for already-provisioned embedded wallets.
-          showWalletUIs: false,
+          // Show Privy's confirmation modal for creates / trades / redeems.
+          showWalletUIs: true,
         },
         externalWallets: {
           solana: {

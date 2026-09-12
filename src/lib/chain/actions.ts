@@ -47,10 +47,22 @@ const outcomeArg = (o: Outcome) => (o === "yes" ? { yes: {} } : { no: {} });
  * Trades touch two LMSR calls plus a token CPI. Measured on devnet:
  * `sell_shares` is the dearest at ~56,500 CU — comfortably under the 200,000
  * default, so the limit is raised only to leave headroom, never because the
- * default is insufficient.
+ * default is insufficient. A CU price helps the tx land after the user
+ * confirms in Privy (blockhash window is short on public RPC).
  */
-const computeBudget = () =>
-  ComputeBudgetProgram.setComputeUnitLimit({ units: 120_000 });
+const tradeBudget = (): TransactionInstruction[] => [
+  ComputeBudgetProgram.setComputeUnitLimit({ units: 120_000 }),
+  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 50_000 }),
+];
+
+/**
+ * Close / resolve are tiny writes, but public devnet RPC drops zero-priority
+ * txs until the blockhash expires. A modest CU price makes settle land.
+ */
+const settleBudget = (): TransactionInstruction[] => [
+  ComputeBudgetProgram.setComputeUnitLimit({ units: 40_000 }),
+  ComputeBudgetProgram.setComputeUnitPrice({ microLamports: 100_000 }),
+];
 
 /** The user's collateral ATA, creating it if this is their first interaction. */
 async function ensureAta(
@@ -126,7 +138,7 @@ export async function buildCreateMarketTx(input: {
     .instruction();
 
   const transaction = await buildUnsignedTransaction(
-    [computeBudget(), ...(ataIx ? [ataIx] : []), ix],
+    [...tradeBudget(), ...(ataIx ? [ataIx] : []), ix],
     input.creator,
   );
 
@@ -197,7 +209,7 @@ export async function buildBuySharesTx(input: {
     .instruction();
 
   const transaction = await buildUnsignedTransaction(
-    [computeBudget(), ...(ataIx ? [ataIx] : []), ix],
+    [...tradeBudget(), ...(ataIx ? [ataIx] : []), ix],
     input.trader,
   );
 
@@ -253,7 +265,7 @@ export async function buildSellSharesTx(input: {
     .instruction();
 
   const transaction = await buildUnsignedTransaction(
-    [computeBudget(), ...(ataIx ? [ataIx] : []), ix],
+    [...tradeBudget(), ...(ataIx ? [ataIx] : []), ix],
     input.trader,
   );
 
@@ -276,7 +288,11 @@ export async function closeMarket(input: {
     authority.publicKey.equals(input.payer.publicKey)
       ? [input.payer]
       : [input.payer, authority];
-  return sendAndConfirm([ix], signers, input.payer.publicKey);
+  return sendAndConfirm(
+    [...settleBudget(), ix],
+    signers,
+    input.payer.publicKey,
+  );
 }
 
 export async function resolveMarket(input: {
@@ -296,7 +312,7 @@ export async function resolveMarket(input: {
     payer.publicKey.equals(input.resolver.publicKey)
       ? [input.resolver]
       : [payer, input.resolver];
-  return sendAndConfirm([ix], signers, payer.publicKey);
+  return sendAndConfirm([...settleBudget(), ix], signers, payer.publicKey);
 }
 
 /** Build an unsigned redeem. */
@@ -327,7 +343,7 @@ export async function buildRedeemTx(input: {
     .instruction();
 
   const transaction = await buildUnsignedTransaction(
-    [computeBudget(), ...(ataIx ? [ataIx] : []), ix],
+    [...tradeBudget(), ...(ataIx ? [ataIx] : []), ix],
     input.owner,
   );
   return { transaction };

@@ -6,6 +6,9 @@
  * Prefers the wallet that matches the app session address so we never sign
  * with a different Privy HD account than the one we built the tx for.
  *
+ * Always shows Privy's confirmation UI — creates, trades, and redeems require
+ * an explicit user approval rather than silent signing.
+ *
  * Privy's `ready` flag often lags a second or two after login — we wait for
  * it instead of failing immediately with "still loading".
  */
@@ -86,9 +89,9 @@ export function usePrivySend() {
             // Devnet RPC simulation is flaky; the program still enforces
             // correctness on chain.
             skipSimulation: true,
-            // Headless — avoids Privy's "Failed to connect to wallet" modal
-            // when the embedded wallet is already available.
-            uiOptions: { showWalletUIs: false },
+            // Require the Privy confirmation modal so the user explicitly
+            // approves creates / trades / redeems.
+            uiOptions: { showWalletUIs: true },
           },
         });
         return bs58.encode(signature);
