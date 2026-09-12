@@ -21,6 +21,12 @@
  * number would silently lose precision at the top of the range.
  */
 
+// Type-only: erased at compile time, so client components importing `@/types`
+// never pull in the server-only describe module.
+import type { ImageDescription } from "@/lib/resolver/describe";
+
+export type { ImageDescription };
+
 export type ID = string;
 
 /** Which side of a yes/no market. Maps to the program's `Outcome` enum. */
@@ -93,6 +99,10 @@ export interface Market {
   aiPrediction?: Side;
   /** 0..1 confidence from the AI resolver. */
   aiConfidence?: number;
+  /** Structured description of the resolution photo the AI read. */
+  aiDescription?: ImageDescription;
+  /** Vision model that produced `aiDescription`, or "stub". */
+  aiModel?: string;
 
   /** Owner-pinned: sorts to the top of the group feed. */
   pinned?: boolean;
