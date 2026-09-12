@@ -24,8 +24,22 @@
 // Type-only: erased at compile time, so client components importing `@/types`
 // never pull in the server-only describe module.
 import type { ImageDescription } from "@/lib/resolver/describe";
+import type {
+  ResolutionRecord,
+  ResolutionStatus,
+  ResolutionView,
+  SettleResult,
+  Verdict,
+} from "@/lib/resolver/types";
 
 export type { ImageDescription };
+export type {
+  ResolutionRecord,
+  ResolutionStatus,
+  ResolutionView,
+  SettleResult,
+  Verdict,
+};
 
 export type ID = string;
 
@@ -90,11 +104,8 @@ export interface Market {
   createSignature?: string;
 
   /**
-   * The AI's suggested outcome — **advisory only**; the owner confirms.
-   *
-   * That separation matters more now than it did off chain: confirming writes
-   * the outcome with the resolver authority, and the program makes that write
-   * one-way. A confident AI is not reason enough to do it unilaterally.
+   * The AI's verdict when it was YES or NO. Kept for older views;
+   * `resolution` is the source of truth.
    */
   aiPrediction?: Side;
   /** 0..1 confidence from the AI resolver. */
@@ -103,6 +114,12 @@ export interface Market {
   aiDescription?: ImageDescription;
   /** Vision model that produced `aiDescription`, or "stub". */
   aiModel?: string;
+  /**
+   * Resolution state: the verdict, who chose the outcome, and settlement
+   * progress. Server-side only; views get `MarketView.resolution`, which
+   * is hidden from non-owners until the market resolves on chain.
+   */
+  resolution?: ResolutionRecord;
 
   /** Owner-pinned: sorts to the top of the group feed. */
   pinned?: boolean;
@@ -171,7 +188,13 @@ export interface Position {
 }
 
 /** Everything a screen needs to render a market, in one payload. */
-export interface MarketView extends Market {
+export interface MarketView extends Omit<Market, "resolution"> {
+  /**
+   * The resolution as this viewer may see it. Non-owners get the redacted
+   * form, and the photo/AI fields are left out, until the market resolves
+   * on chain.
+   */
+  resolution?: ResolutionView;
   status: MarketStatus;
   /** Unix ms, converted from the program's seconds. */
   expiresAt: number;

@@ -5,7 +5,16 @@ import { Card } from "@/components/ui/Card";
 import { OddsBar } from "@/components/OddsBar";
 import { Countdown, useNow } from "@/components/Countdown";
 import { formatUnits } from "@/lib/chain/config";
-import type { MarketView } from "@/types";
+import type { MarketView, ResolutionStatus } from "@/types";
+
+/** Short chip copy for an unresolved market with a resolution record. */
+const RESOLUTION_CHIP: Record<ResolutionStatus, string> = {
+  pending: "SETTLES AT CLOSE",
+  needs_owner: "NEEDS OWNER",
+  settling: "SETTLING",
+  settled: "SETTLING",
+  failed: "RETRYING",
+};
 
 /** Summary card for a market in a group's list. */
 export function MarketCard({
@@ -25,6 +34,9 @@ export function MarketCard({
 }) {
   const now = useNow();
   const live = market.status === "open" && market.expiresAt > now;
+  // A photo is in: app trading is paused, so the status replaces LIVE.
+  const resolutionStatus =
+    market.status !== "resolved" ? market.resolution?.status : undefined;
 
   // A market exists on chain the moment it is created, but the indexer needs a
   // few seconds to see it. Showing it as pending is honest; rendering 50/50
@@ -70,10 +82,25 @@ export function MarketCard({
                   PINNED
                 </span>
               )}
-              {live && (
-                <span className="shrink-0 rounded-md bg-brand px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-white">
-                  LIVE
+              {resolutionStatus ? (
+                <span
+                  className={[
+                    "shrink-0 whitespace-nowrap rounded-md border px-2 py-0.5 font-display text-[10px] font-bold tracking-widest",
+                    resolutionStatus === "failed"
+                      ? "border-no/40 bg-no/15 text-no"
+                      : resolutionStatus === "needs_owner"
+                        ? "border-brand bg-brand text-white"
+                        : "border-brand/40 bg-brand/15 text-brand",
+                  ].join(" ")}
+                >
+                  {RESOLUTION_CHIP[resolutionStatus]}
                 </span>
+              ) : (
+                live && (
+                  <span className="shrink-0 rounded-md bg-brand px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-white">
+                    LIVE
+                  </span>
+                )
               )}
             </div>
           </div>

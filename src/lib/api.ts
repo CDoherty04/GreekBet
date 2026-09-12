@@ -5,9 +5,20 @@
  * `Authorization: Bearer …` (set via {@link setAccessTokenProvider}).
  */
 
-import type { Group, MarketView, Side, User } from "@/types";
+import type { Group, MarketView, SettleResult, Side, User } from "@/types";
 
 type TokenProvider = () => Promise<string | null>;
+
+/** A non-2xx response. `message` is the server's `error` string when it sent one. */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(message: string, status: number) {
+    super(message);
+    this.name = "ApiError";
+    this.status = status;
+  }
+}
 
 let accessTokenProvider: TokenProvider | null = null;
 
@@ -27,7 +38,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, { ...init, headers });
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new Error(body.error ?? `Request failed (${res.status})`);
+    throw new ApiError(body.error ?? `Request failed (${res.status})`, res.status);
   }
   return res.json() as Promise<T>;
 }
@@ -178,21 +189,35 @@ export const api = {
       method: "POST",
     }),
 
+  /**
+   * Submit a resolution photo: describe → validate → policy. `settle` is set
+   * when the server tried to settle straight away (close time already passed).
+   * 409 once a record exists unless the caller is the owner.
+   */
   resolveMarket: (marketId: string, input: { imageDataUrl: string }) =>
-    request<{
-      market: MarketView;
-      prediction: { outcome: Side; confidence: number; description: string };
-      faceMatch: { match: boolean; confidence: number };
-      signature: string;
-    }>(`/api/markets/${marketId}/resolve`, {
-      method: "POST",
-      body: JSON.stringify(input),
+    request<{ market: MarketView; settle: SettleResult | null }>(
+      `/api/markets/${marketId}/resolve`,
+      { method: "POST", body: JSON.stringify(input) },
+    ),
+
+  /** Owner: drop the resolution record and photo so a new one can be taken. */
+  clearResolution: (marketId: string) =>
+    request<{ market: MarketView }>(`/api/markets/${marketId}/resolve`, {
+      method: "DELETE",
     }),
 
+  /** Owner: pick the outcome. Settles now if close time passed, else `waiting`. */
   confirmResolution: (marketId: string, outcome: Side) =>
-    request<{ market: MarketView; outcome: Side; signature: string }>(
+    request<{ market: MarketView; settle: SettleResult }>(
       `/api/markets/${marketId}/resolve/confirm`,
       { method: "POST", body: JSON.stringify({ outcome }) },
+    ),
+
+  /** Owner: settle a `pending`/`failed` record on chain. 409 before close. */
+  settleMarket: (marketId: string) =>
+    request<{ market: MarketView; settle: SettleResult }>(
+      `/api/markets/${marketId}/settle`,
+      { method: "POST" },
     ),
 
   getBalance: () =>

@@ -7,7 +7,7 @@
 
 import "server-only";
 
-import { DescribeError } from "./describe";
+import { DescribeError } from "./errors";
 
 /** Formats the vision model accepts (GIF must be non-animated). */
 export const ALLOWED_IMAGE_TYPES: readonly string[] = Object.freeze([

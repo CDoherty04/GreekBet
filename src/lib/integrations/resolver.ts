@@ -3,20 +3,27 @@
  *
  * Bounty: best recipe that chains sponsor APIs. This is our headline
  * endpoint: given a market question and an uploaded photo, it runs a small
- * pipeline and returns a *suggested* yes/no outcome for the owner to confirm.
+ * pipeline and returns a verdict plus a policy decision on whether that verdict
+ * may settle the market with no human step.
  *
  * The recipe:
- *   1. describe   — REAL. An OpenAI vision model turns the photo into a
- *                   neutral, structured description (`@/lib/resolver/describe`).
- *                   In development without `OPENAI_API_KEY` it returns a
- *                   flagged stub (`stub: true`).
- *   2. sanitize   — strip PII from the flattened description text.
- *   3. decide     — STILL A STUB. A keyword heuristic stands in for the
- *                   stage-2 reasoning model, which will answer the question
- *                   from the sanitized description only.
+ *   1. describe   — an OpenAI vision model turns the photo into a neutral,
+ *                   structured description (`@/lib/resolver/describe`).
+ *   2. sanitize   — strip PII from every description field before it is stored,
+ *                   shown, or passed on.
+ *   3. validate   — a text-only OpenAI call answers the question yes / no /
+ *                   neither from the sanitized description alone
+ *                   (`@/lib/resolver/validate`). It never sees the photo.
+ *   4. policy     — `decideResolution` (`@/lib/resolver/policy`) says `auto`
+ *                   (clear, confident, unflagged yes/no) or `needs_owner`.
  *
- * Failures from describe surface as `DescribeError` (typed code + HTTP status)
- * so the route can return a clean 4xx/5xx.
+ * In development without `OPENAI_API_KEY` both AI stages return flagged stubs,
+ * which the policy always routes to the owner.
+ *
+ * Nothing here touches the store or the chain: the resolve route persists the
+ * record and the settlement service (`@/lib/resolver/settle`) writes on chain.
+ * Failures surface as `ResolverError` (typed code + HTTP status) so the route
+ * can return a clean 4xx/5xx.
  */
 
 import "server-only";
@@ -26,27 +33,26 @@ import {
   formatDescription,
   type ImageDescription,
 } from "@/lib/resolver/describe";
-import type { Side } from "@/types";
+import { decideResolution } from "@/lib/resolver/policy";
+import type { PolicyDecision, ValidationResult } from "@/lib/resolver/types";
+import { validateDescription } from "@/lib/resolver/validate";
 
 export interface Resolution {
-  outcome: Side;
-  /** Sanitized, flattened description of the photo the decision was based on. */
+  /** Sanitized, flattened description of the photo. */
   description: string;
-  /** 0..1 confidence in the outcome. */
-  confidence: number;
   /** Structured description from the vision model, each field sanitized. */
   details: ImageDescription;
   /** Model id that produced the description, or "stub". */
-  model: string;
+  describeModel: string;
   /** True when no vision model was called (dev without a key). */
-  stub: boolean;
+  describeStub: boolean;
+  /** Stage-2 verdict, read from `details` only. */
+  validation: ValidationResult;
+  /** Whether the verdict may auto-resolve, and why. */
+  decision: PolicyDecision;
 }
 
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
-}
-
-/** Step 2: remove anything sensitive before it reaches the decision model. */
+/** Remove anything sensitive before it is stored or reaches the validator. */
 function sanitize(description: string): string {
   return description
     .replace(/\b\d{3}[-.\s]?\d{3}[-.\s]?\d{4}\b/g, "[redacted-phone]")
@@ -54,23 +60,26 @@ function sanitize(description: string): string {
     .trim();
 }
 
-/** Step 3: reasoning model → yes/no answer to the market question. */
-async function decide(
-  question: string,
-  description: string,
-): Promise<{ outcome: Side; confidence: number }> {
-  await delay(700);
-  // STUB: naive keyword heuristic until stage 2 (validate) replaces it.
-  const text = `${question} ${description}`.toLowerCase();
-  const positive = /(finish|won|complete|did|success|empty plate|yes)/.test(
-    text,
-  );
-  return { outcome: positive ? "yes" : "no", confidence: 0.88 };
+function sanitizeDetails(raw: ImageDescription): ImageDescription {
+  return {
+    ...raw,
+    summary: sanitize(raw.summary),
+    observations: raw.observations.map(sanitize),
+    people: raw.people.map((p) => ({
+      label: p.label,
+      appearance: sanitize(p.appearance),
+      actions: sanitize(p.actions),
+      position: sanitize(p.position),
+    })),
+    visibleText: raw.visibleText.map(sanitize),
+    limitations: raw.limitations.map(sanitize),
+  };
 }
 
 /**
- * Run the full resolution recipe for a market.
- * Throws `DescribeError` if the photo is invalid or can't be described.
+ * Run the full resolution recipe for a market: describe → sanitize → validate
+ * → policy. Throws `ResolverError` (`DescribeError` / `ValidateError`) if the
+ * photo is invalid or either AI stage fails.
  */
 export async function resolveFromImage(input: {
   /** The market title / yes-no question. */
@@ -85,33 +94,31 @@ export async function resolveFromImage(input: {
     question: input.question,
     context: input.context,
   });
-  // Sanitize the structured fields too: they are persisted and sent to every
-  // group member via `MarketView`, not just the flattened text.
-  const raw = described.description;
-  const details: ImageDescription = {
-    ...raw,
-    summary: sanitize(raw.summary),
-    observations: raw.observations.map(sanitize),
-    people: raw.people.map((p) => ({
-      label: p.label,
-      appearance: sanitize(p.appearance),
-      actions: sanitize(p.actions),
-      position: sanitize(p.position),
-    })),
-    visibleText: raw.visibleText.map(sanitize),
-    limitations: raw.limitations.map(sanitize),
-  };
+
+  // Sanitize the structured fields too: they are persisted and shown to the
+  // owner (and to everyone once resolved), not just the flattened text.
+  const details = sanitizeDetails(described.description);
   const description = sanitize(formatDescription(details));
-  const decided = await decide(input.question, description);
-  // An unusable photo teaches the heuristic nothing — don't pretend otherwise.
-  const confidence = details.imageQuality === "unusable" ? 0 : decided.confidence;
+
+  const validation = await validateDescription({
+    question: input.question,
+    context: input.context,
+    description: details,
+    describeStub: described.stub,
+  });
+
+  const decision = decideResolution({
+    description: details,
+    describeStub: described.stub,
+    validation,
+  });
 
   return {
-    outcome: decided.outcome,
     description,
-    confidence,
     details,
-    model: described.model,
-    stub: described.stub,
+    describeModel: described.model,
+    describeStub: described.stub,
+    validation,
+    decision,
   };
 }

@@ -11,7 +11,7 @@ import { PublicKey } from "@solana/web3.js";
 import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
-import { toMarketView } from "@/lib/markets";
+import { scheduleDueSettlements, toMarketView } from "@/lib/markets";
 import { buildCreateMarketTx } from "@/lib/chain/actions";
 import { projection } from "@/lib/chain/projection";
 import { resolverKeypair } from "@/lib/chain/wallet";
@@ -31,9 +31,12 @@ export async function GET(
   }
 
   const chain = projection();
-  const markets = db
-    .listMarketsForGroup(groupId)
-    .map((m) => toMarketView(m, chain.get(m.address), user.walletAddress));
+  const metas = db.listMarketsForGroup(groupId);
+  // Settle due resolutions after responding; this list may lag by one load.
+  scheduleDueSettlements(metas, (address) => chain.get(address));
+  const markets = metas.map((m) =>
+    toMarketView(m, chain.get(m.address), user.walletAddress),
+  );
   return ok({ markets });
 }
 

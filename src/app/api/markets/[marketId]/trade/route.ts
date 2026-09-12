@@ -44,6 +44,12 @@ export async function POST(
   if (chain.closeTime * 1000 <= Date.now()) {
     return fail("This market has expired", 409);
   }
+  // App-level pause (PLAN-2 decision 5): the submitter has seen the photo, so
+  // no one trades while a verdict is hidden. The program itself still allows
+  // trades until close; the owner can clear the record to resume.
+  if (meta.resolution) {
+    return fail("A resolution photo was submitted — trading is paused", 409);
+  }
 
   const body = await readJson<TradeBody>(req);
   if (body?.side !== "yes" && body?.side !== "no") {

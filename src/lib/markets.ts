@@ -21,13 +21,24 @@
  * So `computePool` and `computePayouts` were removed rather than adapted —
  * there is nothing left for them to compute. Pricing comes from the chain via
  * the indexer, and payouts are the program's business.
+ *
+ * ## Resolution redaction
+ *
+ * A pending verdict — and the photo it was read from — tells a trader the
+ * answer before the market settles. So until the market is resolved on chain,
+ * only the group owner receives the full `ResolutionRecord` and the photo/AI
+ * fields; everyone else gets `{ redacted: true, status, submittedBy,
+ * submittedAt }`. See `docs/resolver/PLAN-2-validate-settle.md`, decision 4.
  */
+
+import { after } from "next/server";
 
 import type {
   Market,
   MarketStatus,
   MarketView,
   Position,
+  ResolutionView,
   Side,
   Trade,
   User,
@@ -36,8 +47,77 @@ import { priceToProb } from "@/lib/chain/config";
 import type { ChainMarket } from "@/lib/chain/projection";
 import { db } from "@/lib/store";
 import { formatProb, winningShares } from "@/lib/market-display";
+import { isSettleDue, settleMarket } from "@/lib/resolver/settle";
 
 export { formatProb, winningShares };
+
+/** Fields that reveal the pending answer; stripped for non-owners pre-resolution. */
+type RevealingFields =
+  | "resolution"
+  | "resolutionImageUrl"
+  | "resolutionNote"
+  | "aiDescription"
+  | "aiModel"
+  | "aiPrediction"
+  | "aiConfidence";
+
+/**
+ * The market metadata as this viewer may see it.
+ *
+ * Built by destructuring rather than spreading `market`, so the raw record can
+ * never leak through `...market`.
+ */
+function redactFor(
+  market: Market,
+  chain: ChainMarket | undefined,
+  viewerWallet: string | undefined,
+  groupOwnerId: string,
+): Omit<Market, RevealingFields> & Pick<MarketView, RevealingFields> {
+  const {
+    resolution,
+    resolutionImageUrl,
+    resolutionNote,
+    aiDescription,
+    aiModel,
+    aiPrediction,
+    aiConfidence,
+    ...rest
+  } = market;
+
+  // `viewerWallet` may be "" for a user without a wallet — never match on that.
+  const isOwner =
+    Boolean(viewerWallet) &&
+    db.getUserByWallet(viewerWallet!)?.id === groupOwnerId;
+  const revealed = isOwner || chain?.status === "resolved";
+
+  if (revealed) {
+    const view: ResolutionView | undefined = resolution
+      ? { redacted: false, ...resolution }
+      : undefined;
+    return {
+      ...rest,
+      resolution: view,
+      resolutionImageUrl,
+      resolutionNote,
+      aiDescription,
+      aiModel,
+      aiPrediction,
+      aiConfidence,
+    };
+  }
+
+  return {
+    ...rest,
+    resolution: resolution
+      ? {
+          redacted: true,
+          status: resolution.status,
+          submittedBy: resolution.submittedBy,
+          submittedAt: resolution.submittedAt,
+        }
+      : undefined,
+  };
+}
 
 /**
  * Join off-chain metadata to on-chain state.
@@ -46,15 +126,21 @@ export { formatProb, winningShares };
  * not caught up — which is the normal state for a few seconds after creation,
  * since the indexer polls. The view then reports `indexed: false` and the UI
  * shows it as pending rather than inventing prices for it.
+ *
+ * `viewerWallet` decides both `myPosition` and resolution redaction: omit it
+ * and the view is redacted as for a non-owner.
  */
 export function toMarketView(
   market: Market,
   chain: ChainMarket | undefined,
   viewerWallet?: string,
 ): MarketView {
+  const groupOwnerId = db.getGroup(market.groupId)?.ownerId ?? market.createdBy;
+  const meta = redactFor(market, chain, viewerWallet, groupOwnerId);
+
   if (!chain) {
     return {
-      ...market,
+      ...meta,
       status: "open",
       expiresAt: 0,
       pricing: {
@@ -68,19 +154,17 @@ export function toMarketView(
       },
       trades: [],
       indexed: false,
-      groupOwnerId:
-        db.getGroup(market.groupId)?.ownerId ?? market.createdBy,
+      groupOwnerId,
     };
   }
 
   const yesProb = priceToProb(chain.priceYes);
-  const groupOwnerId = db.getGroup(market.groupId)?.ownerId ?? market.createdBy;
   const myPosition: Position | undefined = viewerWallet
     ? toPosition(chain, viewerWallet)
     : undefined;
 
   return {
-    ...market,
+    ...meta,
     status: chain.status as MarketStatus,
     // The program works in unix seconds; the UI in milliseconds.
     expiresAt: chain.closeTime * 1000,
@@ -99,6 +183,25 @@ export function toMarketView(
     indexed: true,
     groupOwnerId,
   };
+}
+
+/**
+ * Lazy settlement trigger for read routes: for every market whose resolution
+ * is due, settle it after the response is sent. Never awaited in the request;
+ * `settleMarket` never throws and dedupes concurrent calls per market.
+ *
+ * Must be called inside a request (route handler) — `after` needs one.
+ */
+export function scheduleDueSettlements(
+  markets: Market[],
+  chainFor: (address: string) => ChainMarket | undefined,
+): void {
+  const now = Date.now();
+  for (const market of markets) {
+    if (!isSettleDue(market, chainFor(market.address), now)) continue;
+    const id = market.address;
+    after(() => settleMarket(id));
+  }
 }
 
 function toPosition(chain: ChainMarket, wallet: string): Position | undefined {
