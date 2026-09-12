@@ -3,10 +3,12 @@
  * resolution photo.
  *
  * POST runs the headline recipe, chaining sponsors:
- *   1. World  → face-match the uploader against their signup selfie, so a real,
- *      verified human vouched for the photo.
- *   2. Resolver (Bazantic) → describe (OpenAI vision) → sanitize → validate
+ *   1. World Selfie Check — live human must vouch for this submission
+ *      (proof consumed from /api/world/verify with action=resolve).
+ *   2. Resolver → describe (OpenAI vision) → sanitize → validate
  *      (text-only) → policy.
+ *
+ * World gates *who* may submit. AI only judges *what* the event photo shows.
  *
  * The result is stored as a `ResolutionRecord`:
  *   - policy `auto`        → `pending`, `source: "ai"`, outcome = verdict;
@@ -30,7 +32,10 @@ import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
 import { toMarketView } from "@/lib/markets";
-import { matchFace } from "@/lib/integrations/world";
+import {
+  consumeVerifiedProof,
+  worldActionId,
+} from "@/lib/integrations/world";
 import {
   resolveFromImage,
   type Resolution,
@@ -43,6 +48,8 @@ import type { Group, Market, User } from "@/types";
 
 interface ResolveBody {
   imageDataUrl: string;
+  /** Nullifier from a fresh Selfie Check (action=resolve). */
+  worldId: string;
 }
 
 /** Why `user` may not submit a photo over the market's current record, if so. */
@@ -115,21 +122,32 @@ export async function POST(
 
   const body = await readJson<ResolveBody>(req);
   if (!body?.imageDataUrl) return fail("imageDataUrl is required");
+  if (!body?.worldId) {
+    return fail("Complete World Selfie Check before submitting a photo");
+  }
 
-  // Run concurrently:
-  //   1) World Selfie Check — confirm the uploader is really in the photo.
-  //   2) Resolver recipe — describe → sanitize → validate → policy.
-  // The face-match result isn't part of the response (PLAN-2 API table).
+  const signal = `${user.id}:${marketId}`;
+  if (
+    !consumeVerifiedProof({
+      userId: user.id,
+      action: worldActionId("resolve", marketId),
+      signal,
+      nullifier: body.worldId,
+    })
+  ) {
+    return fail(
+      "Selfie Check expired or missing — verify again, then submit",
+      422,
+    );
+  }
+
   let prediction: Resolution;
   try {
-    [, prediction] = await Promise.all([
-      matchFace(user.avatarUrl, body.imageDataUrl),
-      resolveFromImage({
-        question: meta.title,
-        context: meta.description,
-        imageDataUrl: body.imageDataUrl,
-      }),
-    ]);
+    prediction = await resolveFromImage({
+      question: meta.title,
+      context: meta.description,
+      imageDataUrl: body.imageDataUrl,
+    });
   } catch (err) {
     // Nothing is persisted on failure.
     if (err instanceof ResolverError) return fail(err.message, err.status);
@@ -169,6 +187,7 @@ export async function POST(
       user.walletAddress,
     ),
     settle,
+    worldVerified: true,
   });
 }
 

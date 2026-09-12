@@ -1,1 +1,3 @@
-Integrate World Chain Selfie Check (https://ethglobal.com/events/ethonline2026/prizes#world)
+Integrate World Chain Selfie Check — done (IDKit + stub; see docs/WORLD_SELFIE_CHECK_FEEDBACK.md)
+Host on Vercel to manage keys
+Mongo so people can join groups

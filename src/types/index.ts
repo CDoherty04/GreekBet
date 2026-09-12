@@ -59,12 +59,14 @@ export interface User {
   id: ID;
   name: string;
   phone: string;
+  /** Optional profile image; Selfie Check does not store a selfie here. */
   avatarUrl: string;
   /** Base58 Solana address (Privy embedded wallet). */
   walletAddress: string;
   /** Telegram chat id after linking the bot (for event DMs). */
   telegramChatId?: string;
   telegramUsername?: string;
+  /** World Selfie Check nullifier (signup action). */
   worldId: string;
   verified: boolean;
   createdAt: number;

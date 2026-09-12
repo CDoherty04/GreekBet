@@ -1,25 +1,26 @@
 "use client";
 
 /**
- * Onboarding — name + phone via Privy SMS, then World selfie for new users.
+ * Onboarding — name + phone via Privy SMS, then World Selfie Check.
  *
  * Skip to /groups only when an *app* profile exists (not merely Privy auth).
- * After a server restart the in-memory store used to wipe profiles; profiles
- * are persisted now so returning Privy users land in /groups again.
  */
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useLoginWithSms, usePrivy } from "@privy-io/react-auth";
 import { useCreateWallet, useWallets } from "@privy-io/react-auth/solana";
-import { PhotoCapture } from "@/components/PhotoCapture";
+import {
+  WorldSelfieCheck,
+  type WorldSelfieVerified,
+} from "@/components/WorldSelfieCheck";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { useSession } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 import { normalizePhone, phoneError } from "@/lib/phone";
 
-type Step = "details" | "code" | "selfie";
+type Step = "details" | "code" | "world";
 
 function pickSolanaAddress(
   wallets: { address: string; standardWallet?: { name?: string } }[],
@@ -44,7 +45,9 @@ export default function OnboardingPage() {
   const { createWallet } = useCreateWallet();
 
   const [step, setStep] = useState<Step>("details");
-  const [selfie, setSelfie] = useState<string | null>(null);
+  const [worldProof, setWorldProof] = useState<WorldSelfieVerified | null>(
+    null,
+  );
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -67,6 +70,7 @@ export default function OnboardingPage() {
   const phoneIssue = phoneError(phone);
   const solanaAddress = useMemo(() => pickSolanaAddress(wallets), [wallets]);
   const hasDetails = Boolean(name.trim() && !phoneIssue);
+  const worldSignal = privyUser?.id ?? "";
 
   const smsBusy =
     submitting ||
@@ -77,7 +81,6 @@ export default function OnboardingPage() {
     if (!loading && user) router.replace("/groups");
   }, [loading, user, router]);
 
-  // Prefill phone from the restored Privy SMS account.
   useEffect(() => {
     if (!authenticated || !privyUser || phonePrefillDone.current) return;
     const fromPrivy =
@@ -89,19 +92,15 @@ export default function OnboardingPage() {
     }
   }, [authenticated, privyUser, phone]);
 
-  // Authenticated but no app profile yet → finish name (if needed) then selfie.
-  // Do not bounce back to SMS.
   useEffect(() => {
     if (!ready || !authenticated || user || loading) return;
     if (!hasDetails) {
       if (step !== "details") setStep("details");
       return;
     }
-    if (step === "details" || step === "code") setStep("selfie");
+    if (step === "details" || step === "code") setStep("world");
   }, [ready, authenticated, user, loading, step, hasDetails]);
 
-  // Only create a wallet after Privy has loaded existing ones. Calling
-  // createWallet while the user already has one opens Privy's error modal.
   useEffect(() => {
     if (!authenticated || !walletsReady || solanaAddress || walletAttempted.current) {
       return;
@@ -179,8 +178,8 @@ export default function OnboardingPage() {
   }
 
   async function submit() {
-    if (!selfie) {
-      setError("Take a selfie first");
+    if (!worldProof) {
+      setError("Complete World Selfie Check first");
       return;
     }
     if (!name.trim() || phoneIssue) {
@@ -195,8 +194,8 @@ export default function OnboardingPage() {
       const { user: created } = await api.completeProfile({
         name,
         phone: normalizePhone(phone),
-        selfieDataUrl: selfie,
         walletAddress,
+        worldId: worldProof.worldId,
       });
       setUser(created);
       router.replace("/groups");
@@ -254,7 +253,7 @@ export default function OnboardingPage() {
             {authenticated ? (
               <Button
                 disabled={!hasDetails}
-                onClick={() => setStep("selfie")}
+                onClick={() => setStep("world")}
               >
                 Continue
               </Button>
@@ -310,27 +309,34 @@ export default function OnboardingPage() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col">
-          <p className="mb-4 text-center text-sm text-muted">
-            We use this photo to verify events relevant to you
+        <div className="flex flex-1 flex-col gap-4">
+          <p className="mb-2 text-center text-sm text-muted">
+            Prove you’re a live person with World Selfie Check. This gates
+            accounts against bots — we don’t store your selfie.
           </p>
           {!solanaAddress && (
-            <p className="mb-3 text-center text-xs text-muted">
+            <p className="text-center text-xs text-muted">
               {creatingWallet || !walletsReady
                 ? "Preparing your Solana wallet…"
                 : "Waiting for Privy wallet…"}
             </p>
           )}
-          <PhotoCapture
-            facingMode="user"
-            captureLabel="Take selfie"
-            onCapture={setSelfie}
-          />
+          {worldSignal ? (
+            <WorldSelfieCheck
+              action="signup"
+              signal={worldSignal}
+              disabled={creatingWallet}
+              onVerified={setWorldProof}
+              onError={setError}
+            />
+          ) : (
+            <p className="text-sm text-muted">Waiting for Privy session…</p>
+          )}
           {error && <p className="text-sm text-no">{error}</p>}
           <div className="mt-auto space-y-2 pt-6">
             <Button
               loading={submitting}
-              disabled={!selfie || creatingWallet}
+              disabled={!worldProof || creatingWallet}
               onClick={() => void submit()}
             >
               Create account

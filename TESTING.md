@@ -69,11 +69,11 @@ Open http://localhost:3000 on a phone-sized viewport (the UI is mobile-first).
 
 ### Walk through it
 
-1. **Sign up** at `/onboarding` — any name and phone, plus a selfie. A Solana
-   wallet is provisioned automatically.
+1. **Sign up** at `/onboarding` — any name and phone, then **World Selfie Check**
+   (labeled stub if World keys are unset). A Solana wallet is provisioned
+   automatically.
 2. **Fund it.** The balance pill in the header will read `$0.00` and warn
-   `no SOL`. Get the address from `.data/keypairs.json`, or just run the smoke
-   test which prints one, then:
+   `no SOL`. Get the address from Profile, then:
    ```bash
    npm run fund -- <your-address>
    ```
@@ -89,9 +89,8 @@ Open http://localhost:3000 on a phone-sized viewport (the UI is mobile-first).
 6. **Sell back.** This is the part parimutuel betting could not do: your
    position is shares in a market maker, so you can exit before resolution at
    the prevailing price.
-7. **Resolve.** Only possible once the close time has passed. Upload a photo;
-   the AI decides, and the outcome is written on chain by the resolver
-   authority.
+7. **Resolve.** Complete World Selfie Check, then upload a photo of the event.
+   AI suggests yes/no from the photo content only; the owner confirms on chain.
 8. **Redeem.** Winners claim 1:1 from the vault. Losers get zero but still close
    out and reclaim their account rent.
 

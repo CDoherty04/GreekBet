@@ -24,6 +24,8 @@
     "@solana/spl-token": "^0.4.15",
     "@solana/web3.js": "^1.99.0",
     "@stripe/stripe-js": "^7.10.0",
+    "@worldcoin/idkit": "^4.2.3",
+    "@worldcoin/idkit-core": "^4.2.4",
     "bs58": "^6.0.0",
     "jose": "^6.2.12",
     "next": "16.3.4",

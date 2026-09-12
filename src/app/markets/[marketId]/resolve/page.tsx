@@ -3,10 +3,11 @@
 /**
  * Resolution flow (see docs/resolver/PLAN-2-validate-settle.md):
  *
- *   1. A member photographs the outcome.
- *   2. The AI describes and validates it; a policy either locks in the outcome
+ *   1. World Selfie Check — live human vouches for the submission.
+ *   2. A member photographs the outcome.
+ *   3. The AI describes and validates it; a policy either locks in the outcome
  *      (`pending`) or hands it to the owner (`needs_owner`).
- *   3. Once close time passes the server settles on chain
+ *   4. Once close time passes the server settles on chain
  *      (`settling` → `settled`, or `failed` and retried).
  *
  * The screen is driven entirely by `market.resolution`. Until the market
@@ -18,6 +19,10 @@ import { useCallback, useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { TopBar } from "@/components/TopBar";
 import { PhotoCapture } from "@/components/PhotoCapture";
+import {
+  WorldSelfieCheck,
+  type WorldSelfieVerified,
+} from "@/components/WorldSelfieCheck";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
 import { Countdown, useNow } from "@/components/Countdown";
@@ -44,6 +49,9 @@ export default function ResolveMarketPage() {
   const now = useNow();
   const [market, setMarket] = useState<MarketView | null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
+  const [worldProof, setWorldProof] = useState<WorldSelfieVerified | null>(
+    null,
+  );
   const [busy, setBusy] = useState<Busy>(null);
   const [error, setError] = useState<string | null>(null);
   const [flash, setFlash] = useState<Flash>(null);
@@ -113,21 +121,33 @@ export default function ResolveMarketPage() {
       <div className="flex flex-1 flex-col gap-4 overflow-y-auto p-4 no-scrollbar">
         <ResolveScreen
           market={market}
+          marketId={marketId}
+          userId={user.id}
           isOwner={isOwner}
           now={now}
           photo={photo}
+          worldProof={worldProof}
           busy={busy}
           error={error}
           flash={flash}
           onCapture={setPhoto}
+          onWorldVerified={setWorldProof}
+          onWorldError={setError}
           onSubmit={async () => {
-            if (!photo) return;
+            if (!photo || !worldProof) return;
             const ok = await run(
               "submit",
-              () => api.resolveMarket(marketId, { imageDataUrl: photo }),
+              () =>
+                api.resolveMarket(marketId, {
+                  imageDataUrl: photo,
+                  worldId: worldProof.worldId,
+                }),
               "Analysis failed",
             );
-            if (ok) setPhoto(null);
+            if (ok) {
+              setPhoto(null);
+              setWorldProof(null);
+            }
           }}
           onConfirm={async (outcome) => {
             const ok = await run(
@@ -151,7 +171,10 @@ export default function ResolveMarketPage() {
               () => api.clearResolution(marketId),
               "Could not clear the photo",
             );
-            if (ok) setPhoto(null);
+            if (ok) {
+              setPhoto(null);
+              setWorldProof(null);
+            }
           }}
           onDone={() => router.replace(`/markets/${marketId}`)}
         />
@@ -163,13 +186,18 @@ export default function ResolveMarketPage() {
 /** Picks the view for the market's resolution state. Pure: props in, UI out. */
 function ResolveScreen({
   market,
+  marketId,
+  userId,
   isOwner,
   now,
   photo,
+  worldProof,
   busy,
   error,
   flash,
   onCapture,
+  onWorldVerified,
+  onWorldError,
   onSubmit,
   onConfirm,
   onSettle,
@@ -177,13 +205,18 @@ function ResolveScreen({
   onDone,
 }: {
   market: MarketView;
+  marketId: string;
+  userId: string;
   isOwner: boolean;
   now: number;
   photo: string | null;
+  worldProof: WorldSelfieVerified | null;
   busy: Busy;
   error: string | null;
   flash: Flash;
   onCapture: (dataUrl: string) => void;
+  onWorldVerified: (result: WorldSelfieVerified) => void;
+  onWorldError: (message: string) => void;
   onSubmit: () => void;
   onConfirm: (outcome: Side) => void;
   onSettle: () => void;
@@ -218,10 +251,18 @@ function ResolveScreen({
     return (
       <>
         <p className="text-sm text-muted">
-          Take a photo of the outcome. AI reads it and, if it&apos;s clear, locks
-          in the result — otherwise the owner decides. Trading pauses once a
-          photo is submitted.
+          Verify with World, then photograph the outcome. AI reads it and, if
+          it&apos;s clear, locks in the result — otherwise the owner decides.
+          Trading pauses once a photo is submitted.
         </p>
+        <WorldSelfieCheck
+          action="resolve"
+          marketId={marketId}
+          signal={`${userId}:${marketId}`}
+          label="Selfie Check to submit"
+          onVerified={onWorldVerified}
+          onError={onWorldError}
+        />
         <PhotoCapture
           facingMode="environment"
           captureLabel="Take photo"
@@ -229,7 +270,11 @@ function ResolveScreen({
         />
         {messages}
         <div className="mt-auto">
-          <Button loading={busy === "submit"} disabled={!photo} onClick={onSubmit}>
+          <Button
+            loading={busy === "submit"}
+            disabled={!photo || !worldProof}
+            onClick={onSubmit}
+          >
             {busy === "submit" ? "Analyzing…" : "Submit photo"}
           </Button>
         </div>

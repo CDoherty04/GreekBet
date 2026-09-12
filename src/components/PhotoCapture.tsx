@@ -3,8 +3,9 @@
 /**
  * PhotoCapture — capture a photo from the camera.
  *
- * Reused for both the signup selfie (World Selfie Check) and the market
- * resolution photo (AI resolver). Emits a base64 data URL via `onCapture`.
+ * Used for market resolution event photos (rear camera). Signup identity uses
+ * World Selfie Check via IDKit — not this component. Emits a base64 data URL
+ * via `onCapture`.
  *
  * Camera access needs a secure context (https or localhost).
  */

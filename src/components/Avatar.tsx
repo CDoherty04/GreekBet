@@ -2,7 +2,7 @@
 
 import { useSession } from "@/components/SessionProvider";
 
-/** The signed-in user's selfie as a small round avatar. */
+/** The signed-in user's avatar (initials if no photo). */
 export function Avatar({ size = 32 }: { size?: number }) {
   const { user } = useSession();
   if (!user) return null;

@@ -1,16 +1,18 @@
 /**
  * /api/session — who am I, complete onboarding, sign out.
  *
- * Auth is Privy (SMS). This route only stores the app profile (name, selfie,
- * World verification) keyed by the Privy user id, and records the Solana
- * wallet address Privy already created. New signups are auto-funded on
- * devnet from the project treasury.
+ * Auth is Privy (SMS). This route stores the app profile (name + World Selfie
+ * Check nullifier) keyed by the Privy user id, and records the Solana wallet
+ * Privy already created. New signups are auto-funded on devnet.
  */
 
 import { db } from "@/lib/store";
 import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser, getPrivyId } from "@/lib/session";
-import { verifySelfie } from "@/lib/integrations/world";
+import {
+  worldActionId,
+  consumeVerifiedProof,
+} from "@/lib/integrations/world";
 import { normalizePhone, isValidE164 } from "@/lib/phone";
 import { fundDevnetWallet } from "@/lib/chain/devnet-fund";
 import type { User } from "@/types";
@@ -23,8 +25,9 @@ export async function GET() {
 interface SignUpBody {
   name: string;
   phone: string;
-  selfieDataUrl: string;
   walletAddress: string;
+  /** Selfie Check nullifier from /api/world/verify (action=signup). */
+  worldId: string;
 }
 
 export async function POST(req: Request) {
@@ -49,8 +52,8 @@ export async function POST(req: Request) {
   }
 
   const body = await readJson<SignUpBody>(req);
-  if (!body?.name || !body?.phone || !body?.selfieDataUrl || !body?.walletAddress) {
-    return fail("name, phone, selfieDataUrl and walletAddress are required");
+  if (!body?.name || !body?.phone || !body?.walletAddress || !body?.worldId) {
+    return fail("name, phone, walletAddress and worldId are required");
   }
   if (body.walletAddress.startsWith("0x")) {
     return fail("A Solana wallet address is required");
@@ -59,18 +62,28 @@ export async function POST(req: Request) {
   const phone = normalizePhone(body.phone);
   if (!isValidE164(phone)) return fail("Invalid phone number");
 
-  const verification = await verifySelfie(body.selfieDataUrl);
-  if (!verification.verified) {
-    return fail("Selfie verification failed", 422);
+  const signal = privyId;
+  if (
+    !consumeVerifiedProof({
+      userId: privyId,
+      action: worldActionId("signup"),
+      signal,
+      nullifier: body.worldId,
+    })
+  ) {
+    return fail(
+      "Complete World Selfie Check before creating an account",
+      422,
+    );
   }
 
   const user: User = {
     id: privyId,
     name: body.name.trim(),
     phone,
-    avatarUrl: body.selfieDataUrl,
+    avatarUrl: "",
     walletAddress: body.walletAddress,
-    worldId: verification.worldId,
+    worldId: body.worldId,
     verified: true,
     createdAt: Date.now(),
   };

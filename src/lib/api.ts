@@ -6,6 +6,8 @@
  */
 
 import type { Group, MarketView, SettleResult, Side, User } from "@/types";
+import type { WorldAction } from "@/lib/world-public";
+import type { IDKitResult } from "@worldcoin/idkit-core";
 
 type TokenProvider = () => Promise<string | null>;
 
@@ -49,14 +51,58 @@ export const api = {
   /**
    * Complete app onboarding after Privy SMS login (new users), or refresh the
    * stored wallet address for returning users.
+   *
+   * `worldId` is the Selfie Check nullifier from {@link worldVerify}.
    */
   completeProfile: (input: {
     name: string;
     phone: string;
-    selfieDataUrl: string;
     walletAddress: string;
+    worldId: string;
   }) =>
     request<{ user: User }>("/api/session", {
+      method: "POST",
+      body: JSON.stringify(input),
+    }),
+
+  worldConfig: () =>
+    request<{
+      configured: boolean;
+      stub: boolean;
+      appId: string | null;
+      rpId: string | null;
+      environment: string;
+    }>("/api/world/rp-signature"),
+
+  worldRpSignature: (action: WorldAction, marketId?: string) =>
+    request<{
+      sig: string;
+      nonce: string;
+      created_at: number;
+      expires_at: number;
+      rp_id: string;
+      action: string;
+      stub: boolean;
+    }>("/api/world/rp-signature", {
+      method: "POST",
+      body: JSON.stringify({ action, marketId }),
+    }),
+
+  worldVerify: (input: {
+    action: WorldAction;
+    signal: string;
+    marketId?: string;
+    idkitResult?: IDKitResult;
+    stub?: boolean;
+  }) =>
+    request<{
+      verified: boolean;
+      stub: boolean;
+      nullifier: string;
+      worldId: string;
+      identifier: string;
+      action: string;
+    }>("/api/world/verify", {
       method: "POST",
       body: JSON.stringify(input),
     }),
@@ -190,11 +236,15 @@ export const api = {
     }),
 
   /**
-   * Submit a resolution photo: describe → validate → policy. `settle` is set
-   * when the server tried to settle straight away (close time already passed).
-   * 409 once a record exists unless the caller is the owner.
+   * Submit a resolution photo after World Selfie Check: describe → validate →
+   * policy. `settle` is set when the server tried to settle straight away
+   * (close time already passed). 409 once a record exists unless the caller is
+   * the owner.
    */
-  resolveMarket: (marketId: string, input: { imageDataUrl: string }) =>
+  resolveMarket: (
+    marketId: string,
+    input: { imageDataUrl: string; worldId: string },
+  ) =>
     request<{ market: MarketView; settle: SettleResult | null }>(
       `/api/markets/${marketId}/resolve`,
       { method: "POST", body: JSON.stringify(input) },
