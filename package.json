@@ -10,6 +10,7 @@
     "lint": "eslint",
     "fund": "node --conditions=react-server --import tsx scripts/fund-wallet.ts",
     "smoke": "node --conditions=react-server --import tsx scripts/smoke-chain.ts",
+    "describe": "node --conditions=react-server --import tsx scripts/describe-image.ts",
     "indexer": "npm --prefix indexer start -- --out ./data/events.jsonl --checkpoint ./data/checkpoint.json"
   },
   "dependencies": {
@@ -26,6 +27,7 @@
     "bs58": "^6.0.0",
     "jose": "^6.2.12",
     "next": "16.3.4",
+    "openai": "^7.15.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "server-only": "^0.0.1"
