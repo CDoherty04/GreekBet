@@ -12,6 +12,7 @@ import { getChainMarket } from "@/lib/chain/projection";
 import { quoteBuy, quoteSell } from "@/lib/chain/quote";
 import { derivePosition, deriveVault } from "@/lib/chain/pdas";
 import { COLLATERAL_MINT, UNIT } from "@/lib/chain/config";
+import { agentTraderKeypair } from "@/lib/chain/wallet";
 import type { Side } from "@/types";
 
 interface QuoteBody {
@@ -39,7 +40,6 @@ export async function POST(
 
   const user = await loadAgentUser(body.userId);
   if (user instanceof Response) return user;
-  if (!user.walletAddress) return fail("No wallet linked", 400);
 
   const { marketId } = await ctx.params;
   const loaded = await loadAgentMarketForUser(marketId, user.id);
@@ -58,7 +58,7 @@ export async function POST(
 
   try {
     const market = new PublicKey(marketId);
-    const trader = new PublicKey(user.walletAddress);
+    const trader = agentTraderKeypair().publicKey;
     const [vault] = deriveVault(market);
     const [position] = derivePosition(market, trader);
     const mint = new PublicKey(chain.collateralMint || COLLATERAL_MINT);

@@ -6,11 +6,12 @@
  *
  * * **resolver** — settles markets after AI / owner confirm
  * * **fee payer** — optional sponsor for resolver txs
+ * * **agent trader** — Bazantic Recipe trades (sign + send without Privy UI)
  *
  * Locally, keys live in `.data/keypairs.json` (gitignored). On Vercel / any
  * read-only filesystem, set `GREEKBET_RESOLVER_SECRET` (and optionally
- * `GREEKBET_FEE_PAYER_SECRET`) to a JSON array of secret-key bytes — never
- * attempt to mkdir under `/var/task`.
+ * `GREEKBET_FEE_PAYER_SECRET` / `GREEKBET_AGENT_TRADER_SECRET`) to a JSON
+ * array of secret-key bytes — never attempt to mkdir under `/var/task`.
  */
 
 import "server-only";
@@ -95,7 +96,7 @@ function keypairFor(role: string, envName: string): Keypair {
 export function roleKeypair(role: string): Keypair {
   if (isServerless()) {
     throw new Error(
-      `roleKeypair(${role}) is not available on Vercel — use GREEKBET_RESOLVER_SECRET / GREEKBET_FEE_PAYER_SECRET`,
+      `roleKeypair(${role}) is not available on Vercel — use GREEKBET_RESOLVER_SECRET / GREEKBET_FEE_PAYER_SECRET / GREEKBET_AGENT_TRADER_SECRET`,
     );
   }
   const store = load();
@@ -125,4 +126,15 @@ export function resolverKeypair(): Keypair {
  */
 export function feePayerKeypair(): Keypair {
   return keypairFor("__fee_payer__", "GREEKBET_FEE_PAYER_SECRET");
+}
+
+/**
+ * The agent trader for Bazantic Recipes.
+ *
+ * Agent `/trade` builds, signs, and sends with this key. Positions accrue here
+ * (not on the discovering user's Privy wallet). Needs SOL + collateral —
+ * `POST /api/agent/trader/fund`.
+ */
+export function agentTraderKeypair(): Keypair {
+  return keypairFor("__agent_trader__", "GREEKBET_AGENT_TRADER_SECRET");
 }

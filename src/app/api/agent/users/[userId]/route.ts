@@ -30,7 +30,8 @@ export async function GET(
     next: {
       listGroups: `/api/agent/users/${user.id}/groups`,
       listMarkets: `/api/agent/users/${user.id}/markets?sort=spread`,
-      fund: `POST /api/agent/users/${user.id}/fund`,
+      fundUser: `POST /api/agent/users/${user.id}/fund`,
+      fundTrader: "POST /api/agent/trader/fund",
     },
   });
 }

@@ -2,7 +2,7 @@
   "openapi": "3.1.0",
   "info": {
     "title": "GroupBet Agent API",
-    "description": "Agent-facing HTTP API for GroupBet (group prediction markets on Solana). Designed for Bazantic gateways and Recipes: discover a user's markets, rank by edge/activity, quote, and prepare a trade. Complete the trade by signing the returned transaction with Privy.",
+    "description": "Agent-facing HTTP API for GroupBet (group prediction markets on Solana). Designed for Bazantic gateways and Recipes: discover a user's markets, rank by edge/activity, quote, then execute a trade with the server-held agent trader wallet (no Privy signing step). Fund the agent trader first via POST /api/agent/trader/fund.",
     "version": "1.0.0"
   },
   "servers": [
@@ -205,6 +205,34 @@
         }
       }
     },
+    "/api/agent/trader/fund": {
+      "post": {
+        "operationId": "fundAgentTrader",
+        "summary": "Fund the GroupBet agent trader wallet on devnet (treasury faucet)",
+        "description": "Recipes execute trades from this server-held Solana wallet. Call before the first trade or when SOL/collateral is low. Bazantic x402 payments are separate.",
+        "responses": {
+          "200": {
+            "description": "Funded (or already funded)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "walletAddress": {
+                      "type": "string",
+                      "description": "Agent trader pubkey (base58)"
+                    },
+                    "ok": { "type": "boolean" },
+                    "note": { "type": "string" }
+                  }
+                }
+              }
+            }
+          },
+          "502": { "description": "Faucet failed" }
+        }
+      }
+    },
     "/api/agent/markets/{marketId}": {
       "get": {
         "operationId": "getAgentMarket",
@@ -233,7 +261,8 @@
     "/api/agent/markets/{marketId}/quote": {
       "post": {
         "operationId": "quoteAgentTrade",
-        "summary": "Simulate a buy/sell",
+        "summary": "Simulate a buy/sell for the agent trader wallet",
+        "description": "Quotes against the server-held agent trader (same wallet that executeAgentTrade uses).",
         "parameters": [
           {
             "name": "marketId",
@@ -282,9 +311,9 @@
     },
     "/api/agent/markets/{marketId}/trade": {
       "post": {
-        "operationId": "prepareAgentTrade",
-        "summary": "Prepare an unsigned trade for Privy to sign",
-        "description": "Returns a base64 Solana transaction. Next step: Privy signAndSendTransaction with the user's embedded wallet.",
+        "operationId": "executeAgentTrade",
+        "summary": "Execute a buy/sell on chain with the GroupBet agent trader wallet",
+        "description": "Authorizes market access via userId (group membership), then builds, signs, and sends the Solana trade with the server-held agent trader. Positions accrue to that wallet. No Privy signing step. Fund the trader first via POST /api/agent/trader/fund.",
         "parameters": [
           {
             "name": "marketId",
@@ -313,31 +342,32 @@
         },
         "responses": {
           "200": {
-            "description": "Unsigned transaction + Privy next step",
+            "description": "On-chain trade complete",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "transaction": {
+                    "signature": {
                       "type": "string",
-                      "description": "Base64 Solana transaction"
+                      "description": "Solana transaction signature"
                     },
                     "received": { "type": "string" },
-                    "walletAddress": { "type": "string" },
-                    "nextStep": {
-                      "type": "object",
-                      "properties": {
-                        "service": { "type": "string", "enum": ["privy"] },
-                        "action": { "type": "string" },
-                        "detail": { "type": "string" }
-                      }
-                    }
+                    "walletAddress": {
+                      "type": "string",
+                      "description": "Agent trader pubkey"
+                    },
+                    "marketId": { "type": "string" },
+                    "side": { "$ref": "#/components/schemas/Side" },
+                    "action": { "$ref": "#/components/schemas/TradeAction" },
+                    "amount": { "type": "string" },
+                    "status": { "type": "string", "enum": ["complete"] }
                   }
                 }
               }
             }
-          }
+          },
+          "502": { "description": "On-chain send failed" }
         }
       }
     }

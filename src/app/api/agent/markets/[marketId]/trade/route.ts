@@ -1,8 +1,9 @@
 /**
- * POST /api/agent/markets/[marketId]/trade — prepare an unsigned buy/sell.
+ * POST /api/agent/markets/[marketId]/trade — execute a buy/sell on chain.
  *
- * Returns a base64 Solana transaction. The Bazantic Recipe should hand this to
- * Privy (`signAndSendTransaction`) to complete the dual-service flow.
+ * `userId` authorizes market access (group membership). The trade is signed
+ * and sent with the server-held agent trader wallet so Bazantic Recipes can
+ * complete without a Privy confirmation step. Positions accrue to that wallet.
  */
 
 import { PublicKey } from "@solana/web3.js";
@@ -10,7 +11,8 @@ import { PublicKey } from "@solana/web3.js";
 import { fail, ok, readJson } from "@/lib/http";
 import { requireAgentApiKey } from "@/lib/agent/auth";
 import { loadAgentMarketForUser, loadAgentUser } from "@/lib/agent/markets";
-import { buildBuySharesTx, buildSellSharesTx } from "@/lib/chain/actions";
+import { buyShares, sellShares } from "@/lib/chain/actions";
+import { agentTraderKeypair } from "@/lib/chain/wallet";
 import { getChainMarket } from "@/lib/chain/projection";
 import { onChainMessage } from "@/app/api/groups/[groupId]/markets/route";
 import type { Side } from "@/types";
@@ -41,7 +43,6 @@ export async function POST(
 
   const user = await loadAgentUser(body.userId);
   if (user instanceof Response) return user;
-  if (!user.walletAddress) return fail("No wallet linked", 400);
 
   const { marketId } = await ctx.params;
   const loaded = await loadAgentMarketForUser(marketId, user.id);
@@ -76,18 +77,18 @@ export async function POST(
 
   try {
     const market = new PublicKey(marketId);
-    const trader = new PublicKey(user.walletAddress);
+    const trader = agentTraderKeypair();
 
     const result =
       body.action === "buy"
-        ? await buildBuySharesTx({
+        ? await buyShares({
             trader,
             market,
             outcome: body.side,
             collateral: amount,
             slippage,
           })
-        : await buildSellSharesTx({
+        : await sellShares({
             trader,
             market,
             outcome: body.side,
@@ -96,19 +97,14 @@ export async function POST(
           });
 
     return ok({
-      transaction: result.transaction,
+      signature: result.signature,
       received: result.received,
-      walletAddress: user.walletAddress,
+      walletAddress: trader.publicKey.toBase58(),
       marketId,
       side: body.side,
       action: body.action,
       amount: body.amount,
-      nextStep: {
-        service: "privy",
-        action: "signAndSendTransaction",
-        detail:
-          "Sign and send `transaction` (base64) with the user's Privy Solana embedded wallet, then confirm on Solana explorer.",
-      },
+      status: "complete",
     });
   } catch (err) {
     return fail(onChainMessage(err), 502);
