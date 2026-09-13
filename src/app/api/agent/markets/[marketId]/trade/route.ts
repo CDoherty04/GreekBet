@@ -11,7 +11,7 @@ import { PublicKey } from "@solana/web3.js";
 import { fail, ok, readJson } from "@/lib/http";
 import { requireAgentApiKey } from "@/lib/agent/auth";
 import { loadAgentMarketForUser, loadAgentUser } from "@/lib/agent/markets";
-import { buyShares, sellShares } from "@/lib/chain/actions";
+import { executeBuyShares, executeSellShares } from "@/lib/chain/actions";
 import { agentTraderKeypair } from "@/lib/chain/wallet";
 import { getChainMarket } from "@/lib/chain/projection";
 import { onChainMessage } from "@/app/api/groups/[groupId]/markets/route";
@@ -81,14 +81,14 @@ export async function POST(
 
     const result =
       body.action === "buy"
-        ? await buyShares({
+        ? await executeBuyShares({
             trader,
             market,
             outcome: body.side,
             collateral: amount,
             slippage,
           })
-        : await sellShares({
+        : await executeSellShares({
             trader,
             market,
             outcome: body.side,

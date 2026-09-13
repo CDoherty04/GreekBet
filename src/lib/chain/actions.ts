@@ -385,6 +385,123 @@ export async function buildReclaimSubsidyTx(input: {
 
 export { questionHash };
 
+/**
+ * Server-signed buy for the agent trader. Uses sendAndConfirm with blockhash
+ * rebuilds — public devnet routinely expires the one-shot signSerialized path.
+ */
+export async function executeBuyShares(input: {
+  trader: Keypair;
+  market: PublicKey;
+  outcome: Outcome;
+  collateral: bigint;
+  slippage?: number;
+  mint?: PublicKey;
+}): Promise<{ signature: string; received: string }> {
+  const mint = input.mint ?? COLLATERAL_MINT;
+  const [vault] = deriveVault(input.market);
+  const [position] = derivePosition(input.market, input.trader.publicKey);
+  const program = readOnlyProgram();
+  const { address: traderAta, ix: ataIx } = await ensureAta(
+    input.trader.publicKey,
+    input.trader.publicKey,
+    mint,
+  );
+
+  const quoted = await quoteBuy({
+    trader: input.trader.publicKey,
+    market: input.market,
+    outcome: input.outcome,
+    collateral: input.collateral,
+    traderAta,
+    vault,
+    position,
+  });
+
+  const tolerance = input.slippage ?? 0.01;
+  const minSharesOut =
+    (quoted * BigInt(Math.round((1 - tolerance) * 10_000))) / 10_000n;
+
+  const ix = await program.methods
+    .buyShares(
+      outcomeArg(input.outcome),
+      new BN(input.collateral.toString()),
+      new BN(minSharesOut.toString()),
+    )
+    .accounts({
+      buyer: input.trader.publicKey,
+      market: input.market,
+      position,
+      vault,
+      buyerTokenAccount: traderAta,
+    })
+    .instruction();
+
+  const signature = await sendAndConfirm(
+    [...tradeBudget(), ...(ataIx ? [ataIx] : []), ix],
+    [input.trader],
+    input.trader.publicKey,
+  );
+  return { signature, received: quoted.toString() };
+}
+
+/**
+ * Server-signed sell for the agent trader. Same rebuild strategy as executeBuyShares.
+ */
+export async function executeSellShares(input: {
+  trader: Keypair;
+  market: PublicKey;
+  outcome: Outcome;
+  shares: bigint;
+  slippage?: number;
+  mint?: PublicKey;
+}): Promise<{ signature: string; received: string }> {
+  const mint = input.mint ?? COLLATERAL_MINT;
+  const [vault] = deriveVault(input.market);
+  const [position] = derivePosition(input.market, input.trader.publicKey);
+  const program = readOnlyProgram();
+  const { address: traderAta, ix: ataIx } = await ensureAta(
+    input.trader.publicKey,
+    input.trader.publicKey,
+    mint,
+  );
+
+  const quoted = await quoteSell({
+    trader: input.trader.publicKey,
+    market: input.market,
+    outcome: input.outcome,
+    shares: input.shares,
+    traderAta,
+    vault,
+    position,
+  });
+
+  const tolerance = input.slippage ?? 0.01;
+  const minUsdcOut =
+    (quoted * BigInt(Math.round((1 - tolerance) * 10_000))) / 10_000n;
+
+  const ix = await program.methods
+    .sellShares(
+      outcomeArg(input.outcome),
+      new BN(input.shares.toString()),
+      new BN(minUsdcOut.toString()),
+    )
+    .accounts({
+      seller: input.trader.publicKey,
+      market: input.market,
+      position,
+      vault,
+      sellerTokenAccount: traderAta,
+    })
+    .instruction();
+
+  const signature = await sendAndConfirm(
+    [...tradeBudget(), ...(ataIx ? [ataIx] : []), ix],
+    [input.trader],
+    input.trader.publicKey,
+  );
+  return { signature, received: quoted.toString() };
+}
+
 /** Script helpers: build + sign with a local Keypair (smoke tests). */
 export async function createMarket(input: {
   creator: Keypair;
