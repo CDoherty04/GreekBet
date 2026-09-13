@@ -4,7 +4,7 @@
  * Privy + session providers.
  *
  * Privy owns SMS login and the Solana embedded wallet. Our SessionProvider
- * still loads the app user profile (name, selfie, World id) from `/api/session`.
+ * still loads the app user profile (name, profile photo) from `/api/session`.
  */
 
 import { PrivyProvider } from "@privy-io/react-auth";

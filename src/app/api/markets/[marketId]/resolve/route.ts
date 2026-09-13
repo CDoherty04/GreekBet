@@ -2,13 +2,9 @@
  * /api/markets/[marketId]/resolve — submit (POST) or clear (DELETE) a
  * resolution photo.
  *
- * POST runs the headline recipe, chaining sponsors:
- *   1. World Selfie Check — live human must vouch for this submission
- *      (proof consumed from /api/world/verify with action=resolve).
- *   2. Resolver → describe (OpenAI vision) → sanitize → validate
- *      (text-only) → policy.
- *
- * World gates *who* may submit. AI only judges *what* the event photo shows.
+ * POST runs the headline recipe:
+ *   Resolver → describe (OpenAI vision, with group profile photos as
+ *   reference) → sanitize → validate (text-only) → policy.
  *
  * The result is stored as a `ResolutionRecord`:
  *   - policy `auto`        → `pending`, `source: "ai"`, outcome = verdict;
@@ -33,10 +29,6 @@ import { fail, ok, readJson } from "@/lib/http";
 import { getCurrentUser } from "@/lib/session";
 import { toMarketView } from "@/lib/markets";
 import {
-  consumeVerifiedProof,
-  worldActionId,
-} from "@/lib/integrations/world";
-import {
   resolveFromImage,
   type Resolution,
 } from "@/lib/integrations/resolver";
@@ -48,8 +40,6 @@ import type { Group, Market, User } from "@/types";
 
 interface ResolveBody {
   imageDataUrl: string;
-  /** Nullifier from a fresh Selfie Check (action=resolve). */
-  worldId: string;
 }
 
 /** Why `user` may not submit a photo over the market's current record, if so. */
@@ -122,24 +112,10 @@ export async function POST(
 
   const body = await readJson<ResolveBody>(req);
   if (!body?.imageDataUrl) return fail("imageDataUrl is required");
-  if (!body?.worldId) {
-    return fail("Complete World Selfie Check before submitting a photo");
-  }
 
-  const signal = `${user.id}:${marketId}`;
-  if (
-    !consumeVerifiedProof({
-      userId: user.id,
-      action: worldActionId("resolve", marketId),
-      signal,
-      nullifier: body.worldId,
-    })
-  ) {
-    return fail(
-      "Selfie Check expired or missing — verify again, then submit",
-      422,
-    );
-  }
+  const members = (
+    await Promise.all(group.memberIds.map((id) => db.getUser(id)))
+  ).filter((u): u is User => Boolean(u));
 
   let prediction: Resolution;
   try {
@@ -147,6 +123,10 @@ export async function POST(
       question: meta.title,
       context: meta.description,
       imageDataUrl: body.imageDataUrl,
+      members: members.map((m) => ({
+        name: m.name,
+        avatarUrl: m.avatarUrl,
+      })),
     });
   } catch (err) {
     // Nothing is persisted on failure.
@@ -185,7 +165,6 @@ export async function POST(
       user.walletAddress,
     ),
     settle,
-    worldVerified: true,
   });
 }
 

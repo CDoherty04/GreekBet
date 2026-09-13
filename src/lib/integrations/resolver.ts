@@ -88,11 +88,14 @@ export async function resolveFromImage(input: {
   context?: string;
   /** The resolution photo as a base64 `data:` URL. */
   imageDataUrl: string;
+  /** Group members; profile photos help label people in the event photo. */
+  members?: { name: string; avatarUrl: string }[];
 }): Promise<Resolution> {
   const described = await describeImage({
     imageDataUrl: input.imageDataUrl,
     question: input.question,
     context: input.context,
+    members: input.members,
   });
 
   // Sanitize the structured fields too: they are persisted and shown to the

@@ -31,8 +31,8 @@ pub enum MarketStatus {
     /// `close_time` has passed and `close_market` (T06) has been cranked.
     /// No trading, no redemption yet.
     Closed,
-    /// The resolver has written [`Market::winning_outcome`]. `redeem` (T08) is
-    /// the only instruction that still does anything.
+    /// The resolver has written [`Market::winning_outcome`]. `redeem` and
+    /// `reclaim_subsidy` are the instructions that still do anything.
     Resolved,
 }
 

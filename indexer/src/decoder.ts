@@ -182,6 +182,16 @@ function normalizeData(name: EventType, f: Record<string, unknown>): unknown {
         payout: u64(f.payout),
         position_closed: Boolean(f.positionClosed ?? f.position_closed),
       };
+
+    case "SubsidyReclaimed":
+      return {
+        creator: pubkey(f.creator),
+        amount: u64(f.amount),
+        outstanding_winning_shares: u64(
+          f.outstandingWinningShares ?? f.outstanding_winning_shares,
+        ),
+        vault_remaining: u64(f.vaultRemaining ?? f.vault_remaining),
+      };
   }
 }
 

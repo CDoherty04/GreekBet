@@ -32,6 +32,8 @@
  */
 
 import { after } from "next/server";
+import { PublicKey } from "@solana/web3.js";
+import { getAccount } from "@solana/spl-token";
 
 import type {
   Market,
@@ -44,6 +46,7 @@ import type {
   User,
 } from "@/types";
 import { priceToProb } from "@/lib/chain/config";
+import { connection } from "@/lib/chain/program";
 import type { ChainMarket } from "@/lib/chain/projection";
 import { db } from "@/lib/store";
 import { formatProb, winningShares } from "@/lib/market-display";
@@ -164,6 +167,9 @@ export async function toMarketView(
   const myPosition: Position | undefined = viewerWallet
     ? toPosition(chain, viewerWallet)
     : undefined;
+  // After reclaim/redeem the indexer can lag; the vault token account is the
+  // source of truth for what's left to reclaim.
+  const volume = await liveVaultVolume(chain);
 
   return {
     ...meta,
@@ -178,13 +184,29 @@ export async function toMarketView(
       qNo: chain.qNo,
       b: chain.b,
       seedAmount: chain.seedAmount,
-      volume: chain.volume,
+      volume,
     },
     trades: await Promise.all(chain.trades.map(toTrade)),
     myPosition,
     indexed: true,
     groupOwnerId,
+    creatorWallet: chain.creator,
   };
+}
+
+/**
+ * For resolved markets, prefer the on-chain vault balance over the event-fold
+ * `volume`. Reclaim/redeem can land before the indexer writes SubsidyReclaimed,
+ * and a stale fold keeps showing "reclaim" after the vault is empty.
+ */
+async function liveVaultVolume(chain: ChainMarket): Promise<string> {
+  if (chain.status !== "resolved") return chain.volume;
+  try {
+    const vault = await getAccount(connection(), new PublicKey(chain.vault));
+    return vault.amount.toString();
+  } catch {
+    return chain.volume;
+  }
 }
 
 /**

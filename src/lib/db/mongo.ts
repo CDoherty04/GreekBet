@@ -61,9 +61,6 @@ async function connect(): Promise<Db> {
       db.collection("groups").createIndex({ memberIds: 1 }),
       db.collection("markets").createIndex({ groupId: 1 }),
       db
-        .collection("world_nullifiers")
-        .createIndex({ action: 1, nullifier: 1 }, { unique: true }),
-      db
         .collection("chain_events")
         .createIndex({ signature: 1, event_index: 1 }, { unique: true }),
       db

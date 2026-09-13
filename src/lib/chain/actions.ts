@@ -1,7 +1,7 @@
 /**
- * The six market actions. **Server-only.**
+ * The seven market actions. **Server-only.**
  *
- * User-facing actions (create / buy / sell / redeem) **build** unsigned
+ * User-facing actions (create / buy / sell / redeem / reclaim) **build** unsigned
  * transactions for the client to sign with Privy. Resolver / close still
  * sign with server-held keypairs.
  *
@@ -345,6 +345,40 @@ export async function buildRedeemTx(input: {
   const transaction = await buildUnsignedTransaction(
     [...tradeBudget(), ...(ataIx ? [ataIx] : []), ix],
     input.owner,
+  );
+  return { transaction };
+}
+
+/** Build an unsigned reclaim of unspent LMSR subsidy for the market creator. */
+export async function buildReclaimSubsidyTx(input: {
+  creator: PublicKey;
+  market: PublicKey;
+  /** Still-unredeemed winning shares; `0` once every winner has cashed out. */
+  remainingWinningShares: string;
+  mint?: PublicKey;
+}): Promise<{ transaction: string }> {
+  const mint = input.mint ?? COLLATERAL_MINT;
+  const [vault] = deriveVault(input.market);
+  const program = readOnlyProgram();
+  const { address: creatorAta, ix: ataIx } = await ensureAta(
+    input.creator,
+    input.creator,
+    mint,
+  );
+
+  const ix = await program.methods
+    .reclaimSubsidy(new BN(input.remainingWinningShares))
+    .accounts({
+      creator: input.creator,
+      market: input.market,
+      vault,
+      creatorTokenAccount: creatorAta,
+    })
+    .instruction();
+
+  const transaction = await buildUnsignedTransaction(
+    [...tradeBudget(), ...(ataIx ? [ataIx] : []), ix],
+    input.creator,
   );
   return { transaction };
 }

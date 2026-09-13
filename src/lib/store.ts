@@ -5,9 +5,10 @@
  * resolution photo). Money / prices / positions stay on chain.
  *
  * User profile fields that fit Privy's 1KB custom_metadata (name, wallet,
- * worldId, telegram) are mirrored there on write so Privy stays the identity
- * source of truth; Mongo remains authoritative for queries (by wallet/phone,
- * group membership, markets).
+ * telegram) are mirrored there on write so Privy stays the identity source of
+ * truth; Mongo remains authoritative for queries (by wallet/phone, group
+ * membership, markets). Profile photos stay in Mongo only (too large for
+ * Privy metadata).
  */
 
 import "server-only";
@@ -44,7 +45,6 @@ async function syncPrivyMetadata(user: User): Promise<void> {
     const custom_metadata: Record<string, string | number | boolean> = {
       name: user.name,
       walletAddress: user.walletAddress,
-      worldId: user.worldId,
       verified: user.verified,
     };
     if (user.telegramChatId) custom_metadata.telegramChatId = user.telegramChatId;
@@ -262,29 +262,3 @@ export const db = {
     return res.deletedCount > 0;
   },
 };
-
-/** Claim a World nullifier (anti-replay). Returns false if already used. */
-export async function claimWorldNullifier(
-  action: string,
-  nullifier: string,
-): Promise<boolean> {
-  try {
-    await (await getMongo()).collection("world_nullifiers").insertOne({
-      action,
-      nullifier: nullifier.toLowerCase(),
-      at: Date.now(),
-    });
-    return true;
-  } catch (err) {
-    // Duplicate key → already claimed.
-    if (
-      err &&
-      typeof err === "object" &&
-      "code" in err &&
-      (err as { code: number }).code === 11000
-    ) {
-      return false;
-    }
-    throw err;
-  }
-}

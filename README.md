@@ -1,34 +1,31 @@
 # 🎲 GroupBet
 
 Private prediction markets for small groups of friends. Create an account with
-just a **selfie + phone number**, join a group with a 6-character code, spin up
-yes/no markets, bet with internal tokens, and **resolve markets from a photo**
-that an AI reads and settles automatically.
+just a **profile photo + phone number**, join a group with a 6-character code,
+spin up yes/no markets, bet with internal tokens, and **resolve markets from a
+photo** that an AI reads and settles automatically.
 
 Built mobile-first for ETH Global Online. Sponsor integrations are isolated
-behind stub modules so the real SDKs drop in without touching the UI or API.
+behind modules so the real SDKs drop in without touching the UI or API.
 
 ## The flow
 
-1. **Onboarding** — selfie → World Selfie Check verifies a real human → Privy
+1. **Onboarding** — name + phone via Privy SMS → take a profile photo → Privy
    auto-creates an embedded wallet. No passwords, no email.
 2. **Groups** — create a group (get an invite code) or join one with a code.
 3. **Markets** — create a yes/no market with an expiry; friends bet tokens.
-4. **Odds** — pricing is parimutuel: the winning side splits the whole pot.
-5. **Resolve** — upload a photo → World face-match confirms the uploader → the
-   AI resolver (describe → sanitize → decide) picks the outcome → winners are
-   paid out in tokens.
+4. **Odds** — LMSR pricing on Solana: a market maker sets prices along a bonding
+   curve; traders can buy and sell before resolution.
+5. **Resolve** — upload a photo of the outcome → the AI resolver (describe →
+   sanitize → validate) uses group profile photos to recognize people when it
+   can, picks the outcome → winners redeem on chain.
 
 ## Sponsor fit
 
 | Sponsor | Where | File |
 | --- | --- | --- |
-| **World** — Selfie Check | signup verification + resolution face-match | `src/lib/integrations/world.ts` |
-| **Privy** — embedded wallet | auto-provisioned at signup | `src/lib/integrations/privy.ts` |
+| **Privy** — embedded wallet | SMS login + Solana wallet at signup | `src/lib/integrations/privy.ts` |
 | **Bazantic** — API recipe | the photo→outcome resolver pipeline | `src/lib/integrations/resolver.ts` |
-
-Each is a stub with the same signature the real integration will have — swap
-the body, keep the interface.
 
 ## Run it
 
@@ -48,29 +45,29 @@ aren't empty on first load.
 src/
   app/
     page.tsx                 # entry → redirects to onboarding or groups
-    onboarding/              # selfie + phone signup
+    onboarding/              # profile photo + phone signup
     groups/                  # list, create, join, detail, create-market
     markets/[marketId]/      # market detail (bet) + resolve
     api/                     # route handlers (the "backend")
   components/                # UI: shell, session, cards, photo capture…
     ui/                      # low-level primitives (Button, Card, TextField)
   lib/
-    store.ts                 # in-memory DB (swap for a real one later)
-    session.ts               # cookie-based auth
-    markets.ts               # parimutuel pricing + settlement
+    store.ts                 # MongoDB off-chain store
+    session.ts               # Privy auth helpers
+    markets.ts               # view models + settlement triggers
     ids.ts                   # id + invite-code generation
     api.ts                   # typed client-side fetch helpers
-    integrations/            # World / Privy / resolver stubs
-    db/                      # seed data (+ future DB adapter)
+    integrations/            # Privy / resolver
+    resolver/                # describe → validate → policy → settle
+    db/                      # seed data + Mongo connection
   types/                     # shared domain types
-contracts/                   # (empty) future on-chain settlement
-docs/                        # (empty) design notes
+contracts/                   # Solana LMSR program
+docs/                        # design notes
 ```
 
 ## Team split
 
-- **Front of house** — `app/**` screens, `components/**`, World + Privy
-  integrations, the demo.
+- **Front of house** — `app/**` screens, `components/**`, Privy, the demo.
 - **Back of house** — `app/api/**`, `lib/store.ts`, `lib/markets.ts`, the
   resolver recipe, settlement.
 

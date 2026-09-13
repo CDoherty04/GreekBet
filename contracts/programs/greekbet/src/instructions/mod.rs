@@ -19,6 +19,7 @@
 pub mod buy_shares;
 pub mod close_market;
 pub mod create_market;
+pub mod reclaim_subsidy;
 pub mod redeem;
 pub mod resolve_market;
 pub mod sell_shares;
@@ -29,12 +30,13 @@ pub mod sell_shares;
 // without the glob, `lib.rs` fails to compile with a bare
 // `unresolved import `crate`` pointing at `#[program]`.
 //
-// Because of that, handlers must NOT all be named `handler` — globbing six
-// modules that each export `handler` makes the name ambiguous. Each is named
+// Because of that, handlers must NOT all be named `handler` — globbing modules
+// that each export `handler` makes the name ambiguous. Each is named
 // `<instruction>_handler` instead. Keep that convention when filling in a body.
 pub use buy_shares::*;
 pub use close_market::*;
 pub use create_market::*;
+pub use reclaim_subsidy::*;
 pub use redeem::*;
 pub use resolve_market::*;
 pub use sell_shares::*;

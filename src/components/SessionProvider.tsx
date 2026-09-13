@@ -4,7 +4,7 @@
  * SessionProvider — Privy auth + app profile.
  *
  * Privy holds the SMS session and Solana wallet. This provider loads the
- * GroupBet user row (name / selfie / World) once Privy reports authenticated.
+ * GroupBet user row (name / profile photo) once Privy reports authenticated.
  */
 
 import {

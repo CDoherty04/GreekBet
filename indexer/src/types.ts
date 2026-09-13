@@ -10,7 +10,7 @@
  * stay camelCase; the conversion happens once, at the edge, in `decoder.ts`.
  */
 
-/** The six events the deployed program actually emits. */
+/** The seven events the deployed program actually emits. */
 export const EVENT_TYPES = [
   "MarketCreated",
   "SharesBought",
@@ -18,6 +18,7 @@ export const EVENT_TYPES = [
   "MarketClosed",
   "MarketResolved",
   "Redeemed",
+  "SubsidyReclaimed",
 ] as const;
 
 export type EventType = (typeof EVENT_TYPES)[number];
@@ -137,12 +138,21 @@ export interface RedeemedData {
   position_closed: boolean;
 }
 
+export interface SubsidyReclaimedData {
+  creator: string;
+  /** Collateral returned to the creator, base units. */
+  amount: U64String;
+  outstanding_winning_shares: U64String;
+  vault_remaining: U64String;
+}
+
 export type EventData =
   | MarketCreatedData
   | TradeData
   | MarketClosedData
   | MarketResolvedData
-  | RedeemedData;
+  | RedeemedData
+  | SubsidyReclaimedData;
 
 /** A transaction's logs plus the metadata every parsed event is stamped with. */
 export interface LogBatch {

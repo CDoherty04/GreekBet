@@ -25,7 +25,7 @@ import { Countdown, useNow } from "@/components/Countdown";
 import { useRequireUser } from "@/components/SessionProvider";
 import { usePrivySend } from "@/hooks/usePrivySend";
 import { api, ApiError } from "@/lib/api";
-import { formatProb, winningShares } from "@/lib/market-display";
+import { formatProb, winningShares, reclaimableSubsidy } from "@/lib/market-display";
 import { formatUnits, parseUnits, UNIT } from "@/lib/chain/config";
 import type { MarketView, ResolutionStatus, Side } from "@/types";
 
@@ -157,6 +157,36 @@ export default function MarketDetailPage() {
     }
   }
 
+  async function submitReclaim() {
+    setBusy(true);
+    setError(null);
+    try {
+      const prepared = await api.prepareReclaim(marketId);
+      await sendBase64(prepared.transaction);
+      setNotice(`Reclaimed $${formatUnits(prepared.amount)} subsidy`);
+      // Clear reclaim UI immediately — the indexer can lag on SubsidyReclaimed.
+      setMarket((m) => {
+        if (!m) return m;
+        const left = BigInt(m.pricing.volume) - BigInt(prepared.amount);
+        const volume = (left > 0n ? left : 0n).toString();
+        return {
+          ...m,
+          pricing: {
+            ...m.pricing,
+            volume,
+            ...(volume === "0" && m.outcome === "yes" ? { qYes: "0" } : {}),
+            ...(volume === "0" && m.outcome === "no" ? { qNo: "0" } : {}),
+          },
+        };
+      });
+      setTimeout(() => void load().catch(() => {}), 2500);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Could not reclaim subsidy");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading || !user || !market) return <Splash />;
 
   if (!market.indexed) {
@@ -181,6 +211,9 @@ export default function MarketDetailPage() {
   // The group owner referees: they confirm the result, so they do not trade.
   // Keeping the referee out of the book is the whole reason that split exists.
   const isOwner = market.groupOwnerId === user.id;
+  const isCreator =
+    market.createdBy === user.id ||
+    market.creatorWallet === user.walletAddress;
   const pos = market.myPosition;
   const held = pos
     ? side === "yes"
@@ -188,6 +221,7 @@ export default function MarketDetailPage() {
       : pos.noShares
     : "0";
   const myWinnings = winningShares(market);
+  const subsidy = reclaimableSubsidy(market);
 
   return (
     <div className="flex flex-1 flex-col">
@@ -214,7 +248,13 @@ export default function MarketDetailPage() {
         <Card>
           <OddsBar pricing={market.pricing} />
           <div className="mt-3 flex justify-between text-xs text-muted">
-            <span>${formatUnits(market.pricing.volume)} in the vault</span>
+            <span>
+              {market.status === "resolved"
+                ? Number(subsidy) > 0
+                  ? `$${formatUnits(subsidy)} subsidy left`
+                  : "Settled"
+                : `$${formatUnits(market.pricing.volume)} in the vault`}
+            </span>
             <span>
               {market.trades.length} trade
               {market.trades.length === 1 ? "" : "s"}
@@ -244,8 +284,11 @@ export default function MarketDetailPage() {
           <ResolvedPanel
             market={market}
             winning={myWinnings}
+            subsidy={subsidy}
+            isCreator={isCreator}
             busy={busy}
             onRedeem={submitRedeem}
+            onReclaim={submitReclaim}
           />
         ) : isOwner && live ? (
           <Card className="text-sm text-muted">
@@ -508,13 +551,19 @@ function TradePanel({
 function ResolvedPanel({
   market,
   winning,
+  subsidy,
+  isCreator,
   busy,
   onRedeem,
+  onReclaim,
 }: {
   market: MarketView;
   winning: string;
+  subsidy: string;
+  isCreator: boolean;
   busy: boolean;
   onRedeem: () => void;
+  onReclaim: () => void;
 }) {
   const won = market.outcome === "yes";
   const redeemed = market.myPosition?.redeemed ?? false;
@@ -523,6 +572,7 @@ function ResolvedPanel({
     market.myPosition !== undefined &&
     (Number(market.myPosition.yesShares) > 0 ||
       Number(market.myPosition.noShares) > 0);
+  const canReclaim = isCreator && Number(subsidy) > 0;
 
   return (
     <Card className="space-y-3">
@@ -579,6 +629,12 @@ function ResolvedPanel({
           {Number(winning) > 0
             ? `Redeem $${formatUnits(winning)}`
             : "Close out position"}
+        </Button>
+      )}
+
+      {canReclaim && (
+        <Button loading={busy} onClick={onReclaim}>
+          Reclaim ${formatUnits(subsidy)} subsidy
         </Button>
       )}
     </Card>

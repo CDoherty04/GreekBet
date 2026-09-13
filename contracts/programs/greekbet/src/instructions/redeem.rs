@@ -70,8 +70,10 @@ pub struct Redeem<'info> {
     #[account(mut)]
     pub owner: Signer<'info>,
 
-    /// The resolved market. Read-only — redemption does not move `q_yes` /
-    /// `q_no`; the LMSR state is frozen once the market resolves.
+    /// The resolved market. `mut` so redemption can decrement the winning-side
+    /// `q`: that outstanding obligation is what `reclaim_subsidy` subtracts
+    /// from the vault balance. Pre-resolution LMSR state is still frozen by
+    /// the `MarketResolved` event; only the remaining payout liability moves.
     ///
     /// This account also supplies the seeds that sign the vault withdrawal, so
     /// it must be a real, program-owned `Market` (which `Account<_, Market>`
@@ -88,6 +90,7 @@ pub struct Redeem<'info> {
     /// explicit so the guarantee does not depend on that reasoning surviving a
     /// future edit.
     #[account(
+        mut,
         seeds = [MARKET_SEED, market.creator.as_ref(), market.question_hash.as_ref()],
         bump = market.bump,
     )]
@@ -199,10 +202,30 @@ pub fn redeem_handler(ctx: Context<Redeem>) -> Result<()> {
     );
 
     // 5. STATE BEFORE CPI. Zero *both* sides — see the doc comment above for
-    //    why the losing side must be cleared too.
+    //    why the losing side must be cleared too. Also decrement the market's
+    //    winning-side `q` so `reclaim_subsidy` can leave exactly the remaining
+    //    obligation in the vault.
     let position = &mut ctx.accounts.position;
     position.yes_shares = 0;
     position.no_shares = 0;
+
+    {
+        let market = &mut ctx.accounts.market;
+        match winning_outcome {
+            Outcome::Yes => {
+                market.q_yes = market
+                    .q_yes
+                    .checked_sub(winning_shares)
+                    .ok_or(GreekBetError::InsufficientShares)?;
+            }
+            Outcome::No => {
+                market.q_no = market
+                    .q_no
+                    .checked_sub(winning_shares)
+                    .ok_or(GreekBetError::InsufficientShares)?;
+            }
+        }
+    }
 
     // 6. Now, and only now, move the money. Skipped entirely for a pure loser:
     //    a zero-amount SPL transfer is legal but pointless, and skipping it

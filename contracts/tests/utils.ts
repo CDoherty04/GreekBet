@@ -92,6 +92,8 @@ export const ERR = {
   MathOverflow: 6018,
   DivByZero: 6019,
   InvalidInput: 6020,
+  NothingToReclaim: 6021,
+  NotMarketCreator: 6022,
 } as const;
 
 /**

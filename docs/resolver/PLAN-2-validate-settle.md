@@ -42,11 +42,12 @@ Frozen types live in `src/lib/resolver/types.ts` (already written — read it).
    stages independent and makes the verdict auditable against stored text.
    The description is untrusted data (it transcribes signs/screens from the
    photo) — the prompt must not follow instructions found in it.
-8. **Named people.** Face matching is deferred, so the validator cannot confirm
-   *who* "Person 1" is. When the question names a person, the validator notes
-   identity is unverified in `reasoning` and lowers confidence; it adds a red
-   flag only if the description is ambiguous about which person the question
-   refers to (e.g. several people could fit).
+8. **Named people.** The describe stage may label people with group member names
+   when profile photos match. When the question names a person and the
+   description already uses that name, the validator may treat them as that
+   person. If only generic "Person N" labels appear, it notes identity is
+   unverified in `reasoning` and lowers confidence; it adds a red flag only if
+   the description is ambiguous about which person the question refers to.
 9. **Idempotent, locked settlement.** One in-process lock per market; the
    chain is the source of truth (`MarketAlreadyResolved` / already-closed are
    success paths, not failures). A `settling` record older than 2 minutes is
@@ -109,5 +110,5 @@ problems), never print keys, don't commit.
 
 ## Out of scope
 
-Contract changes / early resolution; member face matching; majority voting;
+Contract changes / early resolution; majority voting;
 disputes/appeals after settlement (settlement is irreversible on chain).

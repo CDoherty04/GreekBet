@@ -144,6 +144,15 @@ pub enum GreekBetError {
     /// describe.
     #[msg("Invalid input")]
     InvalidInput,
+
+    /// `reclaim_subsidy` was called when the vault holds nothing above the
+    /// outstanding winning-share obligation (already reclaimed, or nothing left).
+    #[msg("Nothing to reclaim")]
+    NothingToReclaim,
+
+    /// `reclaim_subsidy` was signed by a key other than `market.creator`.
+    #[msg("Signer is not the market creator")]
+    NotMarketCreator,
 }
 
 /// Surface LMSR failures as program errors instead of generic panics.
@@ -200,11 +209,11 @@ mod tests {
             anchor_lang::error::ERROR_CODE_OFFSET + GreekBetError::MarketNotOpen as u32,
             6000
         );
-        // 21 variants, so the last one is 20 -> Anchor code 6020.
-        assert_eq!(GreekBetError::InvalidInput as u32, 20);
+        // 23 variants, so the last one is 22 -> Anchor code 6022.
+        assert_eq!(GreekBetError::NotMarketCreator as u32, 22);
         assert_eq!(
-            anchor_lang::error::ERROR_CODE_OFFSET + GreekBetError::InvalidInput as u32,
-            6020
+            anchor_lang::error::ERROR_CODE_OFFSET + GreekBetError::NotMarketCreator as u32,
+            6022
         );
     }
 

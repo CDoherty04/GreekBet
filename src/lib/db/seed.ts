@@ -11,7 +11,6 @@ export function demoUsers(now = Date.now()): [User, User] {
     phone: "+15550000001",
     avatarUrl: "",
     walletAddress: "",
-    worldId: "0xworld_alice",
     verified: true,
     createdAt: now - 1000 * 60 * 60,
   };
@@ -21,7 +20,6 @@ export function demoUsers(now = Date.now()): [User, User] {
     phone: "+15550000002",
     avatarUrl: "",
     walletAddress: "",
-    worldId: "0xworld_bob",
     verified: true,
     createdAt: now - 1000 * 60 * 55,
   };

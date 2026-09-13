@@ -84,13 +84,27 @@ pub fn resolve_market_handler(ctx: Context<ResolveMarket>, winning_outcome: Outc
     market.winning_outcome = Some(winning_outcome);
     market.status = MarketStatus::Resolved;
 
+    // Emit the LMSR book as frozen at resolution *before* clearing the losing
+    // side. Indexers and tests treat these as the final traded quantities.
+    let q_yes_at_resolve = market.q_yes;
+    let q_no_at_resolve = market.q_no;
+
+    // Losing shares pay nothing, so they are not a vault obligation. Zero the
+    // losing side so `vault >= max(q_yes, q_no)` stays a meaningful cover check
+    // through redemptions (which decrement only the winning side) and so
+    // `reclaim_subsidy` can leave exactly `q_win` in the vault.
+    match winning_outcome {
+        Outcome::Yes => market.q_no = 0,
+        Outcome::No => market.q_yes = 0,
+    }
+
     emit!(MarketResolved {
         market: market.key(),
         resolver,
         winning_outcome,
         resolved_at: now,
-        q_yes: market.q_yes,
-        q_no: market.q_no,
+        q_yes: q_yes_at_resolve,
+        q_no: q_no_at_resolve,
     });
 
     Ok(())

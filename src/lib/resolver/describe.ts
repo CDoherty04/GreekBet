@@ -29,9 +29,9 @@ export interface ImageDescription {
   summary: string;
   /** Concrete, visible facts — especially ones relevant to the question. */
   observations: string[];
-  /** Each clearly visible person, labelled "Person 1", "Person 2", … in
-   *  left-to-right order. Never names or identity guesses. Stable labels let
-   *  stage 2 reason about who did what. */
+  /** Each clearly visible person. Label is a group member's name when matched
+   *  to a profile photo, otherwise "Person 1", "Person 2", … in left-to-right
+   *  order. Stable labels let stage 2 reason about who did what. */
   people: {
     label: string;
     /** Clothing, hair, accessories — visible traits only. */
@@ -161,6 +161,9 @@ function toDescription(raw: unknown): ImageDescription {
 /**
  * Describe a resolution photo. Validates the image before any network call.
  * Throws `DescribeError` on every failure path.
+ *
+ * When `members` includes profile photos, those images are attached as
+ * references so the model can label people in the event photo by name.
  */
 export async function describeImage(input: {
   imageDataUrl: string;
@@ -168,6 +171,8 @@ export async function describeImage(input: {
   question: string;
   /** Optional market description for extra context. */
   context?: string;
+  /** Group members with optional profile photos for identification. */
+  members?: { name: string; avatarUrl: string }[];
 }): Promise<DescribeResult> {
   parseImageDataUrl(input.imageDataUrl);
 
@@ -182,6 +187,61 @@ export async function describeImage(input: {
     return stubResult();
   }
 
+  const refs = (input.members ?? [])
+    .map((m) => ({
+      name: m.name.trim(),
+      avatarUrl: m.avatarUrl?.trim() ?? "",
+    }))
+    .filter((m) => m.name)
+    .flatMap((m) => {
+      if (!m.avatarUrl) return [{ ...m, photo: null as string | null }];
+      try {
+        parseImageDataUrl(m.avatarUrl);
+        return [{ ...m, photo: m.avatarUrl }];
+      } catch {
+        // Skip bad/legacy avatar payloads rather than failing the whole resolve.
+        return [{ ...m, photo: null }];
+      }
+    });
+
+  type ContentPart =
+    | { type: "input_text"; text: string }
+    | { type: "input_image"; image_url: string; detail: "high" | "low" | "auto" };
+
+  const content: ContentPart[] = [
+    {
+      type: "input_text",
+      text: buildDescribeUserText(
+        input.question,
+        input.context,
+        refs.map((m) => ({ name: m.name, hasPhoto: Boolean(m.photo) })),
+      ),
+    },
+  ];
+
+  for (const m of refs) {
+    if (!m.photo) continue;
+    content.push({
+      type: "input_text",
+      text: `Profile photo for ${m.name}:`,
+    });
+    content.push({
+      type: "input_image",
+      image_url: m.photo,
+      detail: "low",
+    });
+  }
+
+  content.push({
+    type: "input_text",
+    text: "Event photo to describe:",
+  });
+  content.push({
+    type: "input_image",
+    image_url: input.imageDataUrl,
+    detail: "high",
+  });
+
   const result = await runStructuredResponse({
     stage: "describe",
     key,
@@ -190,17 +250,7 @@ export async function describeImage(input: {
     input: [
       {
         role: "user",
-        content: [
-          {
-            type: "input_text",
-            text: buildDescribeUserText(input.question, input.context),
-          },
-          {
-            type: "input_image",
-            image_url: input.imageDataUrl,
-            detail: "high",
-          },
-        ],
+        content,
       },
     ],
     schemaName: DESCRIPTION_SCHEMA_NAME,

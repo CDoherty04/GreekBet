@@ -4,7 +4,7 @@
     "name": "greekbet",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "GroupBet — binary YES/NO prediction markets priced by an LMSR AMM"
+    "description": "GreekBet — binary YES/NO prediction markets priced by an LMSR AMM"
   },
   "instructions": [
     {
@@ -373,6 +373,95 @@
       ]
     },
     {
+      "name": "reclaim_subsidy",
+      "docs": [
+        "Return unspent LMSR subsidy (`vault − remaining winning shares`) to",
+        "the market creator. `remaining_winning_shares` syncs a possibly-stale",
+        "on-chain `q_win` down (must be `<=` current) before the payout."
+      ],
+      "discriminator": [
+        168,
+        145,
+        161,
+        63,
+        204,
+        185,
+        19,
+        152
+      ],
+      "accounts": [
+        {
+          "name": "creator",
+          "docs": [
+            "The market creator — the key that deposited the LMSR seed. Must sign."
+          ],
+          "writable": true,
+          "signer": true,
+          "relations": [
+            "market"
+          ]
+        },
+        {
+          "name": "market",
+          "docs": [
+            "Resolved market. `has_one = creator` is the whole of the access control.",
+            "`mut` so a stale pre-upgrade `q_win` can be synced down to",
+            "`remaining_winning_shares` before the residual is paid."
+          ],
+          "writable": true,
+          "pda": {
+            "seeds": [
+              {
+                "kind": "const",
+                "value": [
+                  109,
+                  97,
+                  114,
+                  107,
+                  101,
+                  116
+                ]
+              },
+              {
+                "kind": "account",
+                "path": "market.creator",
+                "account": "Market"
+              },
+              {
+                "kind": "account",
+                "path": "market.question_hash",
+                "account": "Market"
+              }
+            ]
+          }
+        },
+        {
+          "name": "vault",
+          "docs": [
+            "The market's collateral vault."
+          ],
+          "writable": true
+        },
+        {
+          "name": "creator_token_account",
+          "docs": [
+            "Creator's token account for the market's collateral mint."
+          ],
+          "writable": true
+        },
+        {
+          "name": "token_program",
+          "address": "TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA"
+        }
+      ],
+      "args": [
+        {
+          "name": "remaining_winning_shares",
+          "type": "u64"
+        }
+      ]
+    },
+    {
       "name": "redeem",
       "docs": [
         "Redeem a resolved position: winning shares 1:1, losing shares zero.",
@@ -406,8 +495,10 @@
         {
           "name": "market",
           "docs": [
-            "The resolved market. Read-only — redemption does not move `q_yes` /",
-            "`q_no`; the LMSR state is frozen once the market resolves.",
+            "The resolved market. `mut` so redemption can decrement the winning-side",
+            "`q`: that outstanding obligation is what `reclaim_subsidy` subtracts",
+            "from the vault balance. Pre-resolution LMSR state is still frozen by",
+            "the `MarketResolved` event; only the remaining payout liability moves.",
             "",
             "This account also supplies the seeds that sign the vault withdrawal, so",
             "it must be a real, program-owned `Market` (which `Account<_, Market>`",
@@ -424,6 +515,7 @@
             "explicit so the guarantee does not depend on that reasoning surviving a",
             "future edit."
           ],
+          "writable": true,
           "pda": {
             "seeds": [
               {
@@ -845,6 +937,19 @@
         113,
         251
       ]
+    },
+    {
+      "name": "SubsidyReclaimed",
+      "discriminator": [
+        230,
+        139,
+        251,
+        109,
+        89,
+        123,
+        31,
+        232
+      ]
     }
   ],
   "errors": [
@@ -952,6 +1057,16 @@
       "code": 6020,
       "name": "InvalidInput",
       "msg": "Invalid input"
+    },
+    {
+      "code": 6021,
+      "name": "NothingToReclaim",
+      "msg": "Nothing to reclaim"
+    },
+    {
+      "code": 6022,
+      "name": "NotMarketCreator",
+      "msg": "Signer is not the market creator"
     }
   ],
   "types": [
@@ -1639,6 +1754,52 @@
             "name": "position_no_shares",
             "docs": [
               "The seller's NO holding after the trade."
+            ],
+            "type": "u64"
+          }
+        ]
+      }
+    },
+    {
+      "name": "SubsidyReclaimed",
+      "docs": [
+        "Emitted when the creator pulls residual subsidy from the vault."
+      ],
+      "type": {
+        "kind": "struct",
+        "fields": [
+          {
+            "name": "market",
+            "docs": [
+              "The market whose vault was drained of residual."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "creator",
+            "docs": [
+              "The creator who received the residual."
+            ],
+            "type": "pubkey"
+          },
+          {
+            "name": "amount",
+            "docs": [
+              "Collateral base units transferred out."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "outstanding_winning_shares",
+            "docs": [
+              "Winning-side shares still outstanding after this reclaim."
+            ],
+            "type": "u64"
+          },
+          {
+            "name": "vault_remaining",
+            "docs": [
+              "Vault balance left for those outstanding shares."
             ],
             "type": "u64"
           }

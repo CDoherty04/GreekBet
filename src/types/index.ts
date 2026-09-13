@@ -59,15 +59,13 @@ export interface User {
   id: ID;
   name: string;
   phone: string;
-  /** Optional profile image; Selfie Check does not store a selfie here. */
+  /** Profile photo from onboarding (`data:` URL or empty). */
   avatarUrl: string;
   /** Base58 Solana address (Privy embedded wallet). */
   walletAddress: string;
   /** Telegram chat id after linking the bot (for event DMs). */
   telegramChatId?: string;
   telegramUsername?: string;
-  /** World Selfie Check nullifier (signup action). */
-  worldId: string;
   verified: boolean;
   createdAt: number;
 }
@@ -126,12 +124,12 @@ export interface Market {
   /** Owner-pinned: sorts to the top of the group feed. */
   pinned?: boolean;
   /**
-   * Owner-archived: hidden from the main feed.
+   * Owner-archived: hidden from the main markets list, shown under Archived.
    *
-   * Off-chain only. Archiving hides a market from this app; it cannot touch the
-   * on-chain market, which keeps trading or stays redeemable regardless. The
-   * same is true of deletion — it drops the metadata while the PDA and its
-   * vault live on.
+   * Off-chain only. Archiving hides a market from this app's main list; it
+   * cannot touch the on-chain market, which keeps trading or stays redeemable
+   * regardless. The same is true of deletion — it drops the metadata while the
+   * PDA and its vault live on.
    */
   archived?: boolean;
 }
@@ -209,4 +207,6 @@ export interface MarketView extends Omit<Market, "resolution"> {
   indexed: boolean;
   /** Who may pin, archive, delete, and confirm resolution. */
   groupOwnerId: ID;
+  /** On-chain creator wallet (seeded the vault). */
+  creatorWallet?: string;
 }

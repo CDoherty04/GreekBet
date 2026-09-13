@@ -37,8 +37,6 @@ route.
    - Persist `aiDescription` and `aiModel` alongside the existing fields; add
      `description` details, `model`, and `stub` to the `prediction` in the
      response body.
-   - Consider running `matchFace` and the resolver concurrently with
-     `Promise.all`; do it if it stays simple.
 4. Check `src/lib/api.ts` for the client type of `resolveMarket`'s response and
    whether it would break — you don't own it; if it needs a change, report it.
 

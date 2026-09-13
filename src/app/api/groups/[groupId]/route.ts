@@ -35,9 +35,9 @@ export async function GET(
   // Settle due resolutions after responding; this list may lag by one load.
   scheduleDueSettlements(allMarkets, (address) => chain.get(address));
   const markets = await Promise.all(
-    allMarkets
-      .filter((m) => !m.archived)
-      .map((m) => toMarketView(m, chain.get(m.address), user.walletAddress)),
+    allMarkets.map((m) =>
+      toMarketView(m, chain.get(m.address), user.walletAddress),
+    ),
   );
 
   if (!isMember) {
@@ -48,7 +48,6 @@ export async function GET(
       ...u,
       phone: "",
       walletAddress: "",
-      worldId: "",
     }));
     return ok({
       group: { ...group, code: "", memberIds: [] },

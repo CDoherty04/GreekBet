@@ -4,7 +4,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { OddsBar } from "@/components/OddsBar";
 import { Countdown, useNow } from "@/components/Countdown";
-import { winningShares } from "@/lib/market-display";
+import { winningShares, reclaimableSubsidy } from "@/lib/market-display";
 import { formatUnits } from "@/lib/chain/config";
 import type { MarketView, ResolutionStatus } from "@/types";
 
@@ -29,6 +29,7 @@ function canRedeemWinnings(market: MarketView): boolean {
 export function MarketCard({
   market,
   isOwner,
+  isCreator,
   busy,
   onPin,
   onArchive,
@@ -36,6 +37,8 @@ export function MarketCard({
 }: {
   market: MarketView;
   isOwner?: boolean;
+  /** Viewer seeded this market and may reclaim residual subsidy. */
+  isCreator?: boolean;
   busy?: boolean;
   onPin?: () => void;
   onArchive?: () => void;
@@ -48,6 +51,8 @@ export function MarketCard({
     market.status !== "resolved" ? market.resolution?.status : undefined;
   const redeemable = canRedeemWinnings(market);
   const redeemAmount = redeemable ? formatUnits(winningShares(market)) : null;
+  const subsidy = reclaimableSubsidy(market);
+  const canReclaim = Boolean(isCreator) && Number(subsidy) > 0;
 
   // A market exists on chain the moment it is created, but the indexer needs a
   // few seconds to see it. Showing it as pending is honest; rendering 50/50
@@ -97,6 +102,10 @@ export function MarketCard({
                 <span className="shrink-0 whitespace-nowrap rounded-md border border-yes/40 bg-yes/15 px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-yes">
                   REDEEM
                 </span>
+              ) : canReclaim ? (
+                <span className="shrink-0 whitespace-nowrap rounded-md border border-yes/40 bg-yes/15 px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-yes">
+                  RECLAIM
+                </span>
               ) : resolutionStatus ? (
                 <span
                   className={[
@@ -132,6 +141,18 @@ export function MarketCard({
             <p className="mt-3 font-display text-xs font-bold tracking-wider text-yes">
               ${redeemAmount} ready to redeem
             </p>
+          ) : canReclaim ? (
+            <p className="mt-3 font-display text-xs font-bold tracking-wider text-yes">
+              ${formatUnits(subsidy)} subsidy to reclaim
+            </p>
+          ) : market.status === "resolved" ? (
+            <div className="mt-3 flex items-center justify-between text-xs text-muted">
+              <span>Settled</span>
+              <span>
+                {market.trades.length} trade
+                {market.trades.length === 1 ? "" : "s"}
+              </span>
+            </div>
           ) : (
             <div className="mt-3 flex items-center justify-between text-xs text-muted">
               <span>${formatUnits(market.pricing.volume)} in the vault</span>

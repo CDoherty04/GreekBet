@@ -271,6 +271,10 @@ export default function GroupDetailPage() {
               key={m.address}
               market={m}
               isOwner={isOwner}
+              isCreator={
+                m.createdBy === user.id ||
+                m.creatorWallet === user.walletAddress
+              }
               busy={busyId === m.address}
               onPin={() => pinMarket(m)}
               onArchive={() => archiveMarket(m)}
@@ -297,6 +301,10 @@ export default function GroupDetailPage() {
                   <MarketCard
                     market={m}
                     isOwner={isOwner}
+                    isCreator={
+                      m.createdBy === user.id ||
+                      m.creatorWallet === user.walletAddress
+                    }
                     busy={busyId === m.address}
                     onPin={() => pinMarket(m)}
                     onArchive={() => archiveMarket(m)}

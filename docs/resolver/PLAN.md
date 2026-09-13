@@ -160,9 +160,6 @@ resolver files pass. The live OpenAI path has not been exercised yet (no
 - Stage 2 validate (YES / NO / neither) and replacing the `decide` stub.
 - Showing structured observations in the resolve page UI.
 - Auto-resolution without owner confirmation.
-- Matching people in the photo to members' profile selfies (deferred). Note
-  for when it's picked up: World Selfie Check only returns a proof that a user
-  passed liveness against their own World enrollment — it exposes no face data
-  and cannot compare faces in an arbitrary photo, so matching would need a
-  dedicated face-comparison service. Subjects would be inferred from member
-  names in the market title.
+- Matching people in the photo to members' profile photos (done: describe stage
+  receives group `avatarUrl`s and may label people by name when confident).
+  Subjects can also be inferred from member names in the market title.

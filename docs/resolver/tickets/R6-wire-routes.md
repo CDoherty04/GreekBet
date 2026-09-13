@@ -31,7 +31,7 @@ Next 16 docs for route handlers and `after`
    `aiConfidence` populated from the verdict for backwards compatibility —
    `aiPrediction` only when verdict is yes/no). Then, if `isSettleDue`, await
    `settleMarket`. Catch `ResolverError` → `fail(message, status)`; nothing
-   persisted on failure. Keep the World `matchFace` call as is.
+   persisted on failure.
    Enforce the replacement rule (plan decision 6).
 3. **Resolve route** (`DELETE`): owner clears record + photo/AI fields.
 4. **Confirm route**: owner sets `outcome`, `source: "owner"`, `status:

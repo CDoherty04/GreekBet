@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Onboarding — name + phone via Privy SMS, then World Selfie Check.
+ * Onboarding — name + phone via Privy SMS, then a profile photo.
  *
  * Skip to /groups only when an *app* profile exists (not merely Privy auth).
  */
@@ -11,17 +11,14 @@ import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useLoginWithSms, usePrivy } from "@privy-io/react-auth";
 import { useCreateWallet, useWallets } from "@privy-io/react-auth/solana";
-import {
-  WorldSelfieCheck,
-  type WorldSelfieVerified,
-} from "@/components/WorldSelfieCheck";
+import { PhotoCapture } from "@/components/PhotoCapture";
 import { Button } from "@/components/ui/Button";
 import { TextField } from "@/components/ui/TextField";
 import { useSession } from "@/components/SessionProvider";
 import { api } from "@/lib/api";
 import { normalizePhone, phoneError } from "@/lib/phone";
 
-type Step = "details" | "code" | "world";
+type Step = "details" | "code" | "photo";
 
 function pickSolanaAddress(
   wallets: { address: string; standardWallet?: { name?: string } }[],
@@ -46,9 +43,7 @@ export default function OnboardingPage() {
   const { createWallet } = useCreateWallet();
 
   const [step, setStep] = useState<Step>("details");
-  const [worldProof, setWorldProof] = useState<WorldSelfieVerified | null>(
-    null,
-  );
+  const [photo, setPhoto] = useState<string | null>(null);
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -71,7 +66,6 @@ export default function OnboardingPage() {
   const phoneIssue = phoneError(phone);
   const solanaAddress = useMemo(() => pickSolanaAddress(wallets), [wallets]);
   const hasDetails = Boolean(name.trim() && !phoneIssue);
-  const worldSignal = privyUser?.id ?? "";
 
   const smsBusy =
     submitting ||
@@ -99,7 +93,7 @@ export default function OnboardingPage() {
       if (step !== "details") setStep("details");
       return;
     }
-    if (step === "details" || step === "code") setStep("world");
+    if (step === "details" || step === "code") setStep("photo");
   }, [ready, authenticated, user, loading, step, hasDetails]);
 
   useEffect(() => {
@@ -179,8 +173,8 @@ export default function OnboardingPage() {
   }
 
   async function submit() {
-    if (!worldProof) {
-      setError("Complete World Selfie Check first");
+    if (!photo) {
+      setError("Take a profile photo first");
       return;
     }
     if (!name.trim() || phoneIssue) {
@@ -195,8 +189,8 @@ export default function OnboardingPage() {
       const { user: created } = await api.completeProfile({
         name,
         phone: normalizePhone(phone),
+        selfieDataUrl: photo,
         walletAddress,
-        worldId: worldProof.worldId,
       });
       setUser(created);
       router.replace("/groups");
@@ -262,7 +256,7 @@ export default function OnboardingPage() {
             {authenticated ? (
               <Button
                 disabled={!hasDetails}
-                onClick={() => setStep("world")}
+                onClick={() => setStep("photo")}
               >
                 Continue
               </Button>
@@ -318,34 +312,24 @@ export default function OnboardingPage() {
           </div>
         </div>
       ) : (
-        <div className="flex flex-1 flex-col gap-4">
-          <p className="mb-2 text-center text-sm text-muted">
-            Prove you’re a live person with World Selfie Check. This gates
-            accounts against bots.
-          </p>
+        <div className="flex flex-1 flex-col">
           {!solanaAddress && (
-            <p className="text-center text-xs text-muted">
+            <p className="mb-3 text-center text-xs text-muted">
               {creatingWallet || !walletsReady
                 ? "Preparing your Solana wallet…"
                 : "Waiting for Privy wallet…"}
             </p>
           )}
-          {worldSignal ? (
-            <WorldSelfieCheck
-              action="signup"
-              signal={worldSignal}
-              disabled={creatingWallet}
-              onVerified={setWorldProof}
-              onError={setError}
-            />
-          ) : (
-            <p className="text-sm text-muted">Waiting for Privy session…</p>
-          )}
+          <PhotoCapture
+            facingMode="user"
+            captureLabel="Take photo"
+            onCapture={setPhoto}
+          />
           {error && <p className="text-sm text-no">{error}</p>}
           <div className="mt-auto space-y-2 pt-6">
             <Button
               loading={submitting}
-              disabled={!worldProof || creatingWallet}
+              disabled={!photo || creatingWallet}
               onClick={() => void submit()}
             >
               Create account

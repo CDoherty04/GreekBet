@@ -136,4 +136,14 @@ pub mod greekbet {
     pub fn redeem(ctx: Context<Redeem>) -> Result<()> {
         instructions::redeem::redeem_handler(ctx)
     }
+
+    /// Return unspent LMSR subsidy (`vault − remaining winning shares`) to
+    /// the market creator. `remaining_winning_shares` syncs a possibly-stale
+    /// on-chain `q_win` down (must be `<=` current) before the payout.
+    pub fn reclaim_subsidy(
+        ctx: Context<ReclaimSubsidy>,
+        remaining_winning_shares: u64,
+    ) -> Result<()> {
+        instructions::reclaim_subsidy::reclaim_subsidy_handler(ctx, remaining_winning_shares)
+    }
 }

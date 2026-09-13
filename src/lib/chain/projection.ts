@@ -28,7 +28,8 @@ interface RawEvent {
     | "SharesSold"
     | "MarketClosed"
     | "MarketResolved"
-    | "Redeemed";
+    | "Redeemed"
+    | "SubsidyReclaimed";
   market: string;
   slot: number;
   signature: string;
@@ -188,6 +189,22 @@ function apply(markets: Map<string, ChainMarket>, ev: RawEvent): void {
       pos.noShares = "0";
       m.positions[d.owner] = pos;
       m.volume = (BigInt(m.volume) - BigInt(d.payout)).toString();
+      // Mirror on-chain: redeem decrements remaining winning-side obligation.
+      const win = d.winning_outcome === "Yes" ? "qYes" : "qNo";
+      const next = BigInt(m[win]) - BigInt(d.winning_shares);
+      m[win] = (next > 0n ? next : 0n).toString();
+      return;
+    }
+
+    case "SubsidyReclaimed": {
+      m.volume = (BigInt(m.volume) - BigInt(d.amount)).toString();
+      // Reclaim may sync a stale pre-upgrade q_win down to the remaining
+      // obligation; mirror that so reclaimable math matches the vault.
+      const outstanding = BigInt(
+        (d.outstanding_winning_shares as string | undefined) ?? "0",
+      );
+      if (m.winningOutcome === "yes") m.qYes = outstanding.toString();
+      if (m.winningOutcome === "no") m.qNo = outstanding.toString();
       return;
     }
   }

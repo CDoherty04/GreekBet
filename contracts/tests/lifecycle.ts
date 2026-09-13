@@ -1,7 +1,7 @@
 /**
  * tests/lifecycle.ts - the happy path, in order (plan 4.2 / T09 task 3).
  *
- * create -> buy (three users) -> sell -> close -> resolve -> redeem.
+ * create -> buy (three users) -> sell -> close -> resolve -> redeem -> reclaim.
  *
  * The tests in this file are **ordered and share state**; mocha runs them in
  * declaration order and each one builds on the market the previous one left
@@ -11,19 +11,20 @@
  * Every step ends with `assertSolvent`, which makes two zero-tolerance claims:
  * the vault holds exactly `seed + (sum in) - (sum out)`, and it holds at least
  * `max(q_yes, q_no)` - the largest payout resolution could possibly produce.
+ * After resolve the losing side is zeroed on the account, and `redeem`
+ * decrements the winning side, so that cover check tracks remaining obligation.
  *
  * ## On "the vault is fully drained after redemption"
  *
- * It is not, and it should not be. After every winner redeems, the vault holds
- * `C(q) - q_win`, which is the market maker's *unspent subsidy*: it goes to
- * zero only in the limit where the market resolved at absolute certainty. What
- * this file asserts instead is the exact identity
- * `residual = seed + (sum in) - (sum out) - (sum payouts)`, that the residual
- * is non-negative (solvency), and - since the winning side is the heavier one
- * here - that it never exceeds the `b*ln2` seed. The residual is printed.
- * `parity.ts` quantifies the *rounding* component of it exactly, against the
- * oracle's `cost_after`, which is the only place that number is knowable
- * without re-implementing the LMSR in TypeScript.
+ * Redemption alone does not drain it. After every winner redeems, the vault
+ * holds `C(q) - q_win`, the market maker's *unspent subsidy*. `reclaim_subsidy`
+ * returns that residual to the creator. What this file asserts is the exact
+ * identity `residual = seed + (sum in) - (sum out) - (sum payouts)`, that the
+ * residual is non-negative (solvency), and - since the winning side is the
+ * heavier one here - that it never exceeds the `b*ln2` seed. The residual is
+ * then reclaimed. `parity.ts` quantifies the *rounding* component of it
+ * exactly, against the oracle's `cost_after`, which is the only place that
+ * number is knowable without re-implementing the LMSR in TypeScript.
  */
 
 import { Keypair, PublicKey, SystemProgram } from "@solana/web3.js";
@@ -57,7 +58,7 @@ import {
   waitForOnChainTime,
 } from "./utils";
 
-describe("lifecycle: create -> buy -> sell -> close -> resolve -> redeem", () => {
+describe("lifecycle: create -> buy -> sell -> close -> resolve -> redeem -> reclaim", () => {
   const program = getProgram();
   const B = 100_000_000n; // 100 USDC of liquidity
   const FUNDING = 1_000_000_000n; // 1,000 USDC each
@@ -493,6 +494,32 @@ describe("lifecycle: create -> buy -> sell -> close -> resolve -> redeem", () =>
       true
     );
 
+    // --- reclaim unspent subsidy ---
+    {
+      const creatorBefore = await tokenBalance(fx.creatorTokenAccount);
+      const tx = await rpcWithEvents(
+        program,
+        program.methods.reclaimSubsidy(bn(0)).accountsPartial({
+          creator: fx.creator.publicKey,
+          market: fx.market,
+          vault: fx.vault,
+          creatorTokenAccount: fx.creatorTokenAccount,
+          tokenProgram: TOKEN_PROGRAM_ID,
+        }),
+        [fx.creator]
+      );
+      const ev = requireEvent(tx, "subsidyReclaimed");
+      cu["reclaim_subsidy"] = tx.computeUnits;
+      expect(big(ev.amount).toString()).to.equal(residual.toString());
+      expect(big(ev.outstandingWinningShares).toString()).to.equal("0");
+      expect(big(ev.vaultRemaining).toString()).to.equal("0");
+      const creatorAfter = await tokenBalance(fx.creatorTokenAccount);
+      expect((creatorAfter - creatorBefore).toString()).to.equal(residual.toString());
+      ledger.out(residual);
+      expect((await tokenBalance(fx.vault)).toString()).to.equal("0");
+      await assertSolvent(program, fx, ledger, "after creator reclaims subsidy");
+    }
+
     // eslint-disable-next-line no-console
     console.log(
       [
@@ -505,10 +532,10 @@ describe("lifecycle: create -> buy -> sell -> close -> resolve -> redeem", () =>
         `    of which payouts      = ${payouts}`,
         `  q_yes at resolution     = ${qYesAtResolution}`,
         `  q_no  at resolution     = ${m.qNo}`,
-        `  RESIDUAL in vault       = ${residual}`,
+        `  RESIDUAL (reclaimed)    = ${residual}`,
         `  residual / seed         = ${(Number(residual) / Number(fx.seed)).toFixed(6)}`,
         "  (residual is the market maker's unspent LMSR subsidy C(q) - q_win,",
-        "   not rounding dust; parity.ts isolates the rounding component.)",
+        "   returned to the creator via reclaim_subsidy.)",
         "",
         "  ---- compute units per instruction (whole instruction, not just the maths) ----",
         ...Object.entries(cu).map(
