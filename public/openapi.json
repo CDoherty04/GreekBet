@@ -1,0 +1,345 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "GreekBet Agent API",
+    "description": "Agent-facing HTTP API for GreekBet (group prediction markets on Solana). Designed for Bazantic gateways and Recipes: discover a user's markets, rank by edge/activity, quote, and prepare a trade. Complete the trade by signing the returned transaction with Privy.",
+    "version": "1.0.0"
+  },
+  "servers": [
+    {
+      "url": "/",
+      "description": "Same origin — replace with your deployed base URL when registering the Bazantic gateway"
+    }
+  ],
+  "security": [{ "AgentApiKey": [] }, { "BearerAuth": [] }],
+  "components": {
+    "securitySchemes": {
+      "AgentApiKey": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "X-Api-Key",
+        "description": "Value of AGENT_API_KEY"
+      },
+      "BearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "description": "Same AGENT_API_KEY as Bearer token"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "properties": {
+          "error": { "type": "string" }
+        },
+        "required": ["error"]
+      },
+      "Side": { "type": "string", "enum": ["yes", "no"] },
+      "TradeAction": { "type": "string", "enum": ["buy", "sell"] },
+      "Sort": {
+        "type": "string",
+        "enum": ["spread", "competitive", "bets", "volume"],
+        "description": "spread=biggest price gap; competitive=closest to 50/50; bets=most trades; volume=vault collateral"
+      }
+    }
+  },
+  "paths": {
+    "/api/agent/users/{userId}": {
+      "get": {
+        "operationId": "getAgentUser",
+        "summary": "Get user summary (Privy id + wallet)",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Privy user DID (did:privy:…)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "User summary and next-step links",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "user": {
+                      "type": "object",
+                      "properties": {
+                        "id": { "type": "string" },
+                        "name": { "type": "string" },
+                        "walletAddress": { "type": "string" },
+                        "privyId": { "type": "string" }
+                      }
+                    },
+                    "groupCount": { "type": "integer" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "description": "Invalid API key" },
+          "404": { "description": "User not found" }
+        }
+      }
+    },
+    "/api/agent/users/{userId}/groups": {
+      "get": {
+        "operationId": "listAgentUserGroups",
+        "summary": "List groups the user belongs to",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Groups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": { "type": "string" },
+                          "name": { "type": "string" },
+                          "ownerId": { "type": "string" },
+                          "memberCount": { "type": "integer" },
+                          "createdAt": { "type": "number" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/users/{userId}/markets": {
+      "get": {
+        "operationId": "listAgentUserMarkets",
+        "summary": "Rank markets across the user's groups",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "schema": { "$ref": "#/components/schemas/Sort" }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": { "type": "string", "enum": ["open", "all"], "default": "open" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked markets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "sort": { "$ref": "#/components/schemas/Sort" },
+                    "status": { "type": "string" },
+                    "count": { "type": "integer" },
+                    "markets": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "address": { "type": "string" },
+                          "title": { "type": "string" },
+                          "groupId": { "type": "string" },
+                          "groupName": { "type": "string" },
+                          "status": { "type": "string" },
+                          "yesProb": { "type": "number" },
+                          "noProb": { "type": "number" },
+                          "volume": { "type": "string" },
+                          "betCount": { "type": "integer" },
+                          "spread": { "type": "number" },
+                          "competitive": { "type": "number" }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/users/{userId}/fund": {
+      "post": {
+        "operationId": "fundAgentUser",
+        "summary": "Fund the user's Solana wallet on devnet (treasury faucet)",
+        "parameters": [
+          {
+            "name": "userId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Funded (or already funded)" },
+          "400": { "description": "No wallet" },
+          "502": { "description": "Faucet failed" }
+        }
+      }
+    },
+    "/api/agent/markets/{marketId}": {
+      "get": {
+        "operationId": "getAgentMarket",
+        "summary": "Get one market the user can access",
+        "parameters": [
+          {
+            "name": "marketId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" },
+            "description": "Market PDA (base58)"
+          },
+          {
+            "name": "userId",
+            "in": "query",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": { "description": "Market view" },
+          "404": { "description": "Not found or not a member" }
+        }
+      }
+    },
+    "/api/agent/markets/{marketId}/quote": {
+      "post": {
+        "operationId": "quoteAgentTrade",
+        "summary": "Simulate a buy/sell",
+        "parameters": [
+          {
+            "name": "marketId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "side", "action", "amount"],
+                "properties": {
+                  "userId": { "type": "string" },
+                  "side": { "$ref": "#/components/schemas/Side" },
+                  "action": { "$ref": "#/components/schemas/TradeAction" },
+                  "amount": {
+                    "type": "string",
+                    "description": "Integer base units as a decimal string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Quote",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "received": { "type": "string" },
+                    "avgPrice": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/agent/markets/{marketId}/trade": {
+      "post": {
+        "operationId": "prepareAgentTrade",
+        "summary": "Prepare an unsigned trade for Privy to sign",
+        "description": "Returns a base64 Solana transaction. Next step: Privy signAndSendTransaction with the user's embedded wallet.",
+        "parameters": [
+          {
+            "name": "marketId",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["userId", "side", "action", "amount"],
+                "properties": {
+                  "userId": { "type": "string" },
+                  "side": { "$ref": "#/components/schemas/Side" },
+                  "action": { "$ref": "#/components/schemas/TradeAction" },
+                  "amount": { "type": "string" },
+                  "slippage": { "type": "number", "minimum": 0, "exclusiveMaximum": 1 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Unsigned transaction + Privy next step",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "transaction": {
+                      "type": "string",
+                      "description": "Base64 Solana transaction"
+                    },
+                    "received": { "type": "string" },
+                    "walletAddress": { "type": "string" },
+                    "nextStep": {
+                      "type": "object",
+                      "properties": {
+                        "service": { "type": "string", "enum": ["privy"] },
+                        "action": { "type": "string" },
+                        "detail": { "type": "string" }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

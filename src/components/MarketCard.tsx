@@ -4,6 +4,7 @@ import Link from "next/link";
 import { Card } from "@/components/ui/Card";
 import { OddsBar } from "@/components/OddsBar";
 import { Countdown, useNow } from "@/components/Countdown";
+import { winningShares } from "@/lib/market-display";
 import { formatUnits } from "@/lib/chain/config";
 import type { MarketView, ResolutionStatus } from "@/types";
 
@@ -15,6 +16,14 @@ const RESOLUTION_CHIP: Record<ResolutionStatus, string> = {
   settled: "SETTLING",
   failed: "RETRYING",
 };
+
+/** True when this viewer still has unredeemed winning shares. */
+function canRedeemWinnings(market: MarketView): boolean {
+  if (market.status !== "resolved") return false;
+  const pos = market.myPosition;
+  if (!pos || pos.redeemed) return false;
+  return Number(winningShares(market)) > 0;
+}
 
 /** Summary card for a market in a group's list. */
 export function MarketCard({
@@ -37,6 +46,8 @@ export function MarketCard({
   // A photo is in: app trading is paused, so the status replaces LIVE.
   const resolutionStatus =
     market.status !== "resolved" ? market.resolution?.status : undefined;
+  const redeemable = canRedeemWinnings(market);
+  const redeemAmount = redeemable ? formatUnits(winningShares(market)) : null;
 
   // A market exists on chain the moment it is created, but the indexer needs a
   // few seconds to see it. Showing it as pending is honest; rendering 50/50
@@ -82,7 +93,11 @@ export function MarketCard({
                   PINNED
                 </span>
               )}
-              {resolutionStatus ? (
+              {redeemable ? (
+                <span className="shrink-0 whitespace-nowrap rounded-md border border-yes/40 bg-yes/15 px-2 py-0.5 font-display text-[10px] font-bold tracking-widest text-yes">
+                  REDEEM
+                </span>
+              ) : resolutionStatus ? (
                 <span
                   className={[
                     "shrink-0 whitespace-nowrap rounded-md border px-2 py-0.5 font-display text-[10px] font-bold tracking-widest",
@@ -113,12 +128,19 @@ export function MarketCard({
             />
           )}
           <OddsBar pricing={market.pricing} />
-          <div className="mt-3 flex items-center justify-between text-xs text-muted">
-            <span>${formatUnits(market.pricing.volume)} in the vault</span>
-            <span>
-              {market.trades.length} trade{market.trades.length === 1 ? "" : "s"}
-            </span>
-          </div>
+          {redeemable && redeemAmount !== null ? (
+            <p className="mt-3 font-display text-xs font-bold tracking-wider text-yes">
+              ${redeemAmount} ready to redeem
+            </p>
+          ) : (
+            <div className="mt-3 flex items-center justify-between text-xs text-muted">
+              <span>${formatUnits(market.pricing.volume)} in the vault</span>
+              <span>
+                {market.trades.length} trade
+                {market.trades.length === 1 ? "" : "s"}
+              </span>
+            </div>
+          )}
         </Card>
       </Link>
       {isOwner && onPin && onArchive && onDelete && (
