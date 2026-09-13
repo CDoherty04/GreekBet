@@ -16,7 +16,7 @@ const barlow = Barlow_Condensed({
 });
 
 export const metadata: Metadata = {
-  title: "Groupbet",
+  title: "GroupBet",
   description: "Private prediction markets for your group.",
 };
 

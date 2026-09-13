@@ -25,7 +25,7 @@ export async function POST(
     return ok({
       ...result,
       walletAddress: user.walletAddress,
-      note: "Devnet faucet via project treasury. Not part of the Bazantic Recipe core path.",
+      note: "Devnet faucet via project treasury. Optional setup step, not the GroupBet Recipe core path.",
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Fund failed";

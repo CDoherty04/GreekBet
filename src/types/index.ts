@@ -1,5 +1,5 @@
 /**
- * Shared domain types for Groupbet.
+ * Shared domain types for GroupBet.
  *
  * Single source of truth for what flows between the API routes
  * (`src/app/api/**`) and the client screens (`src/app/**`). Small and

@@ -1,6 +1,6 @@
-# GreekBet indexer — listen & parse
+# GroupBet indexer — listen & parse
 
-Watches the GreekBet Anchor program, decodes its events, and emits a
+Watches the GroupBet Anchor program, decodes its events, and emits a
 deduplicated, slot-ordered stream.
 
 **Persistence is deliberately out of scope.** The product of this package is a

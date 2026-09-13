@@ -212,14 +212,14 @@ export default function OnboardingPage() {
       <div className="mb-8 text-center">
         <Image
           src="/logo.png"
-          alt="Groupbet"
+          alt="GroupBet"
           width={96}
           height={96}
           className="mx-auto mb-5 h-24 w-24 rounded-2xl"
           priority
         />
         <h1 className="font-display text-4xl font-extrabold uppercase leading-none tracking-tight">
-          Welcome to Groupbet
+          Welcome to GroupBet
         </h1>
         {authenticated && !user && (
           <p className="mt-3 text-sm text-muted">

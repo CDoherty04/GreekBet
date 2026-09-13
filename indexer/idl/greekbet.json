@@ -4,7 +4,7 @@
     "name": "greekbet",
     "version": "0.1.0",
     "spec": "0.1.0",
-    "description": "GreekBet — binary YES/NO prediction markets priced by an LMSR AMM"
+    "description": "GroupBet — binary YES/NO prediction markets priced by an LMSR AMM"
   },
   "instructions": [
     {

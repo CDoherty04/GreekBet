@@ -1,4 +1,4 @@
-//! # GreekBet — binary YES/NO prediction markets priced by an LMSR AMM
+//! # GroupBet — binary YES/NO prediction markets priced by an LMSR AMM
 //!
 //! Devnet/testnet only. No real funds (plan, "Key decisions locked in").
 //!

@@ -1,9 +1,9 @@
 {
-  "name": "greekbet",
+  "name": "groupbet",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "TypeScript local-validator test harness for the GreekBet Anchor program (T09).",
+  "description": "TypeScript local-validator test harness for the GroupBet Anchor program (T09).",
   "scripts": {
     "test": "ts-mocha -p ./tsconfig.json -t 1000000 \"tests/**/*.ts\"",
     "typecheck": "tsc --noEmit -p ./tsconfig.json"

@@ -7,7 +7,7 @@ Nothing here is built by `cargo build`/`cargo test`: there is no `main.rs`, so
 Cargo's bench auto-discovery ignores the directory. The files are inputs to
 [`run.sh`](run.sh), which assembles a throwaway workspace **outside the repo**
 (`$HOME/gb-cu`), builds the probe for the SBF target and runs it under LiteSVM.
-The GreekBet repo itself gains no Solana dependency.
+The GroupBet repo itself gains no Solana dependency.
 
 ## Why a probe program rather than a model
 

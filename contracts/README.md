@@ -1,9 +1,9 @@
-# GreekBet contracts — on-chain settlement
+# GroupBet contracts — on-chain settlement
 
 Binary YES/NO prediction markets on Solana, priced by an LMSR automated market
 maker. Non-custodial: collateral lives in a per-market on-chain vault.
 
-This is the `contracts/` half of the repo — the Groupbet Next.js app lives at
+This is the `contracts/` half of the repo — the GroupBet Next.js app lives at
 the root and is entirely separate. **Nothing in the app imports from here yet**;
 this phase deliberately builds and proves the on-chain unit on its own, with no
 frontend, indexer, or wallet dependency. Wiring the two together is later work.

@@ -162,7 +162,7 @@ async function main(): Promise<void> {
   if (argv.includes("--help") || argv.includes("-h")) {
     console.log(
       [
-        "greekbet-indexer — parse GreekBet program events into a stream",
+        "greekbet-indexer — parse GroupBet program events into a stream",
         "",
         "  --endpoint <url>      RPC endpoint (env RPC_URL, default devnet)",
         "  --out <path>          output JSONL (default ./data/events.jsonl)",

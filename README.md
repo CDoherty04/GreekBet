@@ -1,4 +1,4 @@
-# 🎲 Groupbet
+# 🎲 GroupBet
 
 Private prediction markets for small groups of friends. Create an account with
 just a **selfie + phone number**, join a group with a 6-character code, spin up

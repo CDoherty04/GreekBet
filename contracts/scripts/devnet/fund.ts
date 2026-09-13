@@ -405,7 +405,7 @@ export async function fund(): Promise<FundingManifest> {
   const signatures: string[] = [];
 
   console.log("=".repeat(70));
-  console.log("GreekBet devnet funding");
+  console.log("GroupBet devnet funding");
   console.log(`  rpc      : ${DEVNET_RPC}`);
   console.log(`  treasury : ${treasury.publicKey.toBase58()}`);
   console.log("=".repeat(70));

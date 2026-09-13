@@ -1,8 +1,8 @@
 {
   "openapi": "3.1.0",
   "info": {
-    "title": "GreekBet Agent API",
-    "description": "Agent-facing HTTP API for GreekBet (group prediction markets on Solana). Designed for Bazantic gateways and Recipes: discover a user's markets, rank by edge/activity, quote, and prepare a trade. Complete the trade by signing the returned transaction with Privy.",
+    "title": "GroupBet Agent API",
+    "description": "Agent-facing HTTP API for GroupBet (group prediction markets on Solana). Designed for Bazantic gateways and Recipes: discover a user's markets, rank by edge/activity, quote, and prepare a trade. Complete the trade by signing the returned transaction with Privy.",
     "version": "1.0.0"
   },
   "servers": [

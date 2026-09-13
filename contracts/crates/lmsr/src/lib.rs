@@ -1,4 +1,4 @@
-//! # GreekBet LMSR core
+//! # GroupBet LMSR core
 //!
 //! A standalone, dependency-free, `no_std` implementation of Hanson's
 //! Logarithmic Market Scoring Rule for a **binary** market, written so that a

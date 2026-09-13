@@ -3,7 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "description": "Listens to the GreekBet Anchor program and emits parsed, deduplicated, slot-ordered events. Persistence is deliberately out of scope — this produces a stream, a separate writer consumes it.",
+  "description": "Listens to the GroupBet Anchor program and emits parsed, deduplicated, slot-ordered events. Persistence is deliberately out of scope — this produces a stream, a separate writer consumes it.",
   "type": "commonjs",
   "main": "dist/index.js",
   "bin": {

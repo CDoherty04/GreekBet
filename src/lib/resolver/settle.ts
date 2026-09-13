@@ -78,7 +78,7 @@ export const ERR = {
 } as const;
 
 /**
- * The GreekBet program error in `err`, if any.
+ * The GroupBet program error in `err`, if any.
  *
  * `sendAndConfirm` rethrows web3.js's `SendTransactionError` from preflight.
  * Its message carries `custom program error: 0x1773` and its `logs` carry
