@@ -222,9 +222,9 @@ function ResolveScreen({
     return (
       <>
         <p className="text-sm text-muted">
-          Photograph the outcome. AI reads it — using group profile photos when
-          it can — and, if it&apos;s clear, locks in the result; otherwise the
-          owner decides. Trading pauses once a photo is submitted.
+          Take a picture of the outcome. An agent will resolve the outcome,
+          unless it&apos;s unclear. In this case, the owner will decide.
+          Trading pauses once a photo is submitted.
         </p>
         <PhotoCapture
           facingMode="environment"

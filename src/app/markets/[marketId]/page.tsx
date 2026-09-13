@@ -3,14 +3,8 @@
 /**
  * Market detail — LMSR odds, buy/sell shares, redeem after resolution.
  *
- * The trading panel differs from the old parimutuel one in two ways that
- * matter to the user, not just the code:
- *
- * * **You can sell before resolution.** A position is shares in a market maker,
- *   not a stake in a pot, so it can be closed at the prevailing price.
- * * **The quote is live and authoritative.** Before trading, the amount is
- *   simulated against the real program, so the shares shown are the shares the
- *   chain will actually mint — not a JavaScript estimate of the curve.
+ * Unlike the old parimutuel pot, a position is shares in a market maker, so
+ * you can sell before resolution at the prevailing price.
  */
 
 import { useCallback, useEffect, useState } from "react";
@@ -26,7 +20,7 @@ import { useRequireUser } from "@/components/SessionProvider";
 import { usePrivySend } from "@/hooks/usePrivySend";
 import { api, ApiError } from "@/lib/api";
 import { formatProb, winningShares, reclaimableSubsidy } from "@/lib/market-display";
-import { formatUnits, parseUnits, UNIT } from "@/lib/chain/config";
+import { formatUnits, parseUnits } from "@/lib/chain/config";
 import type { MarketView, ResolutionStatus, Side } from "@/types";
 
 type Action = "buy" | "sell";
@@ -39,10 +33,6 @@ export default function MarketDetailPage() {
   const [side, setSide] = useState<Side>("yes");
   const [action, setAction] = useState<Action>("buy");
   const [amount, setAmount] = useState("1");
-  const [quote, setQuote] = useState<{ received: string; avgPrice: string } | null>(
-    null,
-  );
-  const [quoting, setQuoting] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -67,49 +57,9 @@ export default function MarketDetailPage() {
   }, [market, load]);
 
   // A submitted resolution photo pauses app trading until the market resolves
-  // (the trade route refuses with 409), so don't quote either.
+  // (the trade route refuses with 409).
   const tradingPaused =
     market?.resolution !== undefined && market.status !== "resolved";
-
-  // Quote whenever the trade changes. Debounced: each quote is a simulated
-  // transaction against devnet, so firing one per keystroke would be slow and
-  // would draw rate limiting.
-  useEffect(() => {
-    if (!market?.indexed || market.status !== "open" || tradingPaused) return;
-    let cancelled = false;
-    const handle = setTimeout(async () => {
-      let base: bigint;
-      try {
-        base = parseUnits(amount);
-      } catch {
-        setQuote(null);
-        return;
-      }
-      if (base <= 0n) {
-        setQuote(null);
-        return;
-      }
-      setQuoting(true);
-      try {
-        const q = await api.quote(marketId, {
-          side,
-          action,
-          amount: base.toString(),
-        });
-        if (!cancelled) setQuote(q);
-      } catch {
-        // A quote can legitimately fail — selling more than you hold, a trade
-        // that prices to zero. The trade button surfaces the real reason.
-        if (!cancelled) setQuote(null);
-      } finally {
-        if (!cancelled) setQuoting(false);
-      }
-    }, 400);
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [amount, side, action, marketId, market?.indexed, market?.status, tradingPaused]);
 
   async function submitTrade() {
     setBusy(true);
@@ -303,8 +253,6 @@ export default function MarketDetailPage() {
             setAction={setAction}
             amount={amount}
             setAmount={setAmount}
-            quote={quote}
-            quoting={quoting}
             busy={busy}
             held={held}
             yesProb={market.pricing.yesProb}
@@ -395,8 +343,6 @@ function TradePanel({
   setAction,
   amount,
   setAmount,
-  quote,
-  quoting,
   busy,
   held,
   yesProb,
@@ -409,8 +355,6 @@ function TradePanel({
   setAction: (a: Action) => void;
   amount: string;
   setAmount: (v: string) => void;
-  quote: { received: string; avgPrice: string } | null;
-  quoting: boolean;
   busy: boolean;
   held: string;
   yesProb: number;
@@ -508,30 +452,6 @@ function TradePanel({
                 : "Priced by the market maker"))}
         </span>
       </label>
-
-      <div className="rounded-xl border border-border bg-surface-2 px-3 py-2 text-sm">
-        {paused ? (
-          <span className="text-muted">Trading paused</span>
-        ) : quoting ? (
-          <span className="text-muted">Quoting…</span>
-        ) : quote ? (
-          <div className="flex items-center justify-between">
-            <span className="text-muted">
-              {action === "buy" ? "You receive" : "You get"}
-            </span>
-            <span className="font-semibold">
-              {action === "buy"
-                ? `${formatUnits(quote.received)} ${side.toUpperCase()}`
-                : `$${formatUnits(quote.received)}`}
-              <span className="ml-2 text-xs font-normal text-muted">
-                @ {Math.round((Number(quote.avgPrice) / UNIT) * 100)}¢
-              </span>
-            </span>
-          </div>
-        ) : (
-          <span className="text-muted">Enter an amount for a quote</span>
-        )}
-      </div>
 
       <Button
         variant={side === "yes" ? "yes" : "no"}
